@@ -3,7 +3,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import request from 'supertest';
 import { AppModule } from '../src/app.module';
 
-describe('GraphQL /graphql (e2e)', () => {
+describe('GraphQL /graphql apiVersion (e2e)', () => {
   let app: INestApplication;
 
   beforeAll(async () => {
@@ -19,12 +19,12 @@ describe('GraphQL /graphql (e2e)', () => {
     await app.close();
   });
 
-  it('ping returns "pong"', async () => {
+  it('apiVersion returns a string', async () => {
     const response = await request(app.getHttpServer())
       .post('/graphql')
-      .send({ query: '{ ping }' })
+      .send({ query: '{ apiVersion }' })
       .expect(200);
 
-    expect(response.body).toEqual({ data: { ping: 'pong' } });
+    expect(response.body.data.apiVersion).toEqual(expect.any(String));
   });
 });

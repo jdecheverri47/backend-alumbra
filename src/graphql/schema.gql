@@ -3,6 +3,6 @@
 # ------------------------------------------------------
 
 type Query {
-  """Health check: returns "pong" if DB is reachable."""
-  ping: String!
+  """Placeholder until the first real queries ship."""
+  apiVersion: String!
 }

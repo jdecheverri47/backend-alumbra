@@ -7,7 +7,63 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-model Health {
+enum BaseRole {
+  ASISTENTE
+  MIEMBRO
+}
+
+enum MinistryRole {
+  LEADER
+  MEMBER
+}
+
+model User {
   id        String   @id @default(cuid())
-  createdAt DateTime @default(now())
+  email     String   @unique
+  firstName String
+  lastName  String
+  baseRole  BaseRole @default(ASISTENTE)
+  isPastor  Boolean  @default(false)
+
+  phone     String?
+  photoUrl  String?
+  googleId  String?  @unique
+  birthDate DateTime?
+
+  ministryMemberships MinistryMembership[]
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  @@index([deletedAt])
+}
+
+model Ministry {
+  id          String   @id @default(cuid())
+  slug        String   @unique
+  name        String
+  description String?
+
+  memberships MinistryMembership[]
+
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+  archivedAt DateTime?
+}
+
+model MinistryMembership {
+  id         String       @id @default(cuid())
+  userId     String
+  ministryId String
+  role       MinistryRole @default(MEMBER)
+  joinedAt   DateTime     @default(now())
+  leftAt     DateTime?
+
+  user     User     @relation(fields: [userId], references: [id])
+  ministry Ministry @relation(fields: [ministryId], references: [id])
+
+  @@unique([userId, ministryId, joinedAt])
+  @@index([ministryId])
+  @@index([userId])
 }

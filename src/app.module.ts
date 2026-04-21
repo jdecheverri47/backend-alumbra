@@ -3,8 +3,8 @@ import { Module } from '@nestjs/common';
 import { GraphQLModule } from '@nestjs/graphql';
 import { join } from 'path';
 import { ConfigModule } from './config/config.module';
-import { HealthModule } from './health/health.module';
 import { PrismaModule } from './prisma/prisma.module';
+import { AppResolver } from './app.resolver';
 
 @Module({
   imports: [
@@ -20,7 +20,7 @@ import { PrismaModule } from './prisma/prisma.module';
         path: '/graphql',
       }),
     }),
-    HealthModule,
   ],
+  providers: [AppResolver],
 })
 export class AppModule {}
