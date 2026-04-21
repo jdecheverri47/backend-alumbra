@@ -24,10 +24,10 @@ export class UserModel {
   @Field(() => Boolean)
   isPastor!: boolean;
 
-  @Field({ nullable: true })
+  @Field(() => String, { nullable: true })
   phone?: string | null;
 
-  @Field({ nullable: true })
+  @Field(() => String, { nullable: true })
   photoUrl?: string | null;
 
   @Field(() => Date, { nullable: true })

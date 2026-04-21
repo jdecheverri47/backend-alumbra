@@ -8,10 +8,10 @@ export class UpdateUserInput {
   @Field({ nullable: true })
   lastName?: string;
 
-  @Field({ nullable: true })
+  @Field(() => String, { nullable: true })
   phone?: string | null;
 
-  @Field({ nullable: true })
+  @Field(() => String, { nullable: true })
   photoUrl?: string | null;
 
   @Field(() => Date, { nullable: true })

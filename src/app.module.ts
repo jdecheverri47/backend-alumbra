@@ -4,6 +4,7 @@ import { GraphQLModule } from '@nestjs/graphql';
 import { join } from 'path';
 import { ConfigModule } from './config/config.module';
 import { PrismaModule } from './prisma/prisma.module';
+import { UsersModule } from './users/users.module';
 import { AppResolver } from './app.resolver';
 
 @Module({
@@ -20,6 +21,7 @@ import { AppResolver } from './app.resolver';
         path: '/graphql',
       }),
     }),
+    UsersModule,
   ],
   providers: [AppResolver],
 })

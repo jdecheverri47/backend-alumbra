@@ -2,7 +2,85 @@
 # THIS FILE WAS AUTOMATICALLY GENERATED (DO NOT MODIFY)
 # ------------------------------------------------------
 
+enum BaseRole {
+  ASISTENTE
+  MIEMBRO
+}
+
+input CreateUserInput {
+  birthDate: DateTime
+  email: String!
+  firstName: String!
+  lastName: String!
+  phone: String
+}
+
+"""
+A date-time string at UTC, such as 2019-12-03T09:54:33Z, compliant with the date-time format.
+"""
+scalar DateTime
+
+type Mutation {
+  createUser(input: CreateUserInput!): User!
+  setUserPastor(id: ID!, isPastor: Boolean!): User!
+  softDeleteUser(id: ID!): User!
+  updateUser(id: ID!, input: UpdateUserInput!): User!
+}
+
+type PageInfo {
+  endCursor: String
+  hasNextPage: Boolean!
+}
+
+input PaginationInput {
+  after: String
+  first: Int! = 20
+}
+
 type Query {
   """Placeholder until the first real queries ship."""
   apiVersion: String!
+  user(id: ID!): User
+  users(filter: UserFilterInput, pagination: PaginationInput): UserConnection!
+}
+
+input UpdateUserInput {
+  birthDate: DateTime
+  firstName: String
+  lastName: String
+  phone: String
+  photoUrl: String
+}
+
+type User {
+  baseRole: BaseRole!
+  birthDate: DateTime
+  createdAt: DateTime!
+  email: String!
+  firstName: String!
+
+  """Computed: firstName + " " + lastName."""
+  fullName: String!
+  id: ID!
+  isPastor: Boolean!
+  lastName: String!
+  phone: String
+  photoUrl: String
+}
+
+type UserConnection {
+  edges: [UserEdge!]!
+  pageInfo: PageInfo!
+}
+
+type UserEdge {
+  cursor: String!
+  node: User!
+}
+
+input UserFilterInput {
+  baseRole: BaseRole
+  isPastor: Boolean
+  ministryId: String
+  search: String
 }
