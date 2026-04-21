@@ -2,9 +2,21 @@
 # THIS FILE WAS AUTOMATICALLY GENERATED (DO NOT MODIFY)
 # ------------------------------------------------------
 
+input AddUserToMinistryInput {
+  ministryId: ID!
+  role: MinistryRole!
+  userId: ID!
+}
+
 enum BaseRole {
   ASISTENTE
   MIEMBRO
+}
+
+input CreateMinistryInput {
+  description: String
+  name: String!
+  slug: String!
 }
 
 input CreateUserInput {
@@ -20,10 +32,39 @@ A date-time string at UTC, such as 2019-12-03T09:54:33Z, compliant with the date
 """
 scalar DateTime
 
+type Ministry {
+  archivedAt: DateTime
+  createdAt: DateTime!
+  description: String
+  id: ID!
+  members(includeLeft: Boolean! = false, role: MinistryRole): [MinistryMembership!]!
+  name: String!
+  slug: String!
+}
+
+type MinistryMembership {
+  id: ID!
+  joinedAt: DateTime!
+  leftAt: DateTime
+  ministry: Ministry!
+  role: MinistryRole!
+  user: User!
+}
+
+enum MinistryRole {
+  LEADER
+  MEMBER
+}
+
 type Mutation {
+  addUserToMinistry(input: AddUserToMinistryInput!): MinistryMembership!
+  archiveMinistry(id: ID!): Ministry!
+  createMinistry(input: CreateMinistryInput!): Ministry!
   createUser(input: CreateUserInput!): User!
+  removeUserFromMinistry(membershipId: ID!): MinistryMembership!
   setUserPastor(id: ID!, isPastor: Boolean!): User!
   softDeleteUser(id: ID!): User!
+  updateMinistry(id: ID!, input: UpdateMinistryInput!): Ministry!
   updateUser(id: ID!, input: UpdateUserInput!): User!
 }
 
@@ -40,8 +81,15 @@ input PaginationInput {
 type Query {
   """Placeholder until the first real queries ship."""
   apiVersion: String!
+  ministries(includeArchived: Boolean! = false): [Ministry!]!
+  ministry(slug: String!): Ministry
   user(id: ID!): User
   users(filter: UserFilterInput, pagination: PaginationInput): UserConnection!
+}
+
+input UpdateMinistryInput {
+  description: String
+  name: String
 }
 
 input UpdateUserInput {
