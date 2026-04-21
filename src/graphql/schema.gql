@@ -112,6 +112,7 @@ type User {
   id: ID!
   isPastor: Boolean!
   lastName: String!
+  ministries: [MinistryMembership!]!
   phone: String
   photoUrl: String
 }
