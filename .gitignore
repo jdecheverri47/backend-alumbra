@@ -1,0 +1,27 @@
+# deps
+node_modules/
+
+# build
+dist/
+
+# env
+.env
+.env.local
+.env.*.local
+!.env.example
+
+# logs
+*.log
+
+# editor
+.vscode/
+.idea/
+.DS_Store
+
+# tests
+coverage/
+
+# prisma
+prisma/*.db
+
+# Note: src/graphql/schema.gql IS committed (see scaffold spec)
