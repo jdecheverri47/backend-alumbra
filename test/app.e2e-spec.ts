@@ -73,7 +73,7 @@ describe('Spec A happy path (e2e)', () => {
     // Filter users by ministryId
     const filterResp = await gql(app)
       .send({
-        query: `query ($mid: String!) {
+        query: `query ($mid: ID!) {
           users(filter: { ministryId: $mid }) { edges { node { id email } } }
         }`,
         variables: { mid: ministryId },
@@ -94,7 +94,7 @@ describe('Spec A happy path (e2e)', () => {
     // Filter now excludes the user
     const filterAfterResp = await gql(app)
       .send({
-        query: `query ($mid: String!) {
+        query: `query ($mid: ID!) {
           users(filter: { ministryId: $mid }) { edges { node { id } } }
         }`,
         variables: { mid: ministryId },

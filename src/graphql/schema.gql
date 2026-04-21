@@ -130,6 +130,6 @@ type UserEdge {
 input UserFilterInput {
   baseRole: BaseRole
   isPastor: Boolean
-  ministryId: String
+  ministryId: ID
   search: String
 }

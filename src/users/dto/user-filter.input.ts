@@ -1,4 +1,4 @@
-import { Field, InputType } from '@nestjs/graphql';
+import { Field, ID, InputType } from '@nestjs/graphql';
 import { BaseRole } from './base-role.enum';
 
 @InputType()
@@ -9,7 +9,7 @@ export class UserFilterInput {
   @Field(() => Boolean, { nullable: true })
   isPastor?: boolean;
 
-  @Field(() => String, { nullable: true })
+  @Field(() => ID, { nullable: true })
   ministryId?: string;
 
   @Field(() => String, { nullable: true })

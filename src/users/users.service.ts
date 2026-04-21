@@ -9,6 +9,7 @@ import {
   createUserSchema,
   updateUserSchema,
 } from './dto/inputs.schema';
+import { toUserModel } from './dto/to-user-model';
 import { UserConnection } from './dto/user-connection.type';
 import { UserFilterInput } from './dto/user-filter.input';
 
@@ -61,7 +62,8 @@ export class UsersService {
   }
 
   async list(filter: UserFilterInput, page: PaginationInput): Promise<UserConnection> {
-    const take = page.first + 1; // fetch one extra to detect next page
+    const first = Math.max(1, Math.min(100, page.first ?? 20));
+    const take = first + 1; // fetch one extra to detect next page
     const where: Prisma.UserWhereInput = {};
 
     if (filter.baseRole) where.baseRole = filter.baseRole;
@@ -87,22 +89,15 @@ export class UsersService {
       ...(page.after ? { cursor: { id: decodeCursor(page.after) }, skip: 1 } : {}),
     });
 
-    const hasNextPage = rows.length > page.first;
-    const slice = rows.slice(0, page.first);
+    const hasNextPage = rows.length > first;
+    const slice = rows.slice(0, first);
 
     return {
-      edges: slice.map((node) => ({ node: toModel(node), cursor: encodeCursor(node.id) })),
+      edges: slice.map((node) => ({ node: toUserModel(node), cursor: encodeCursor(node.id) })),
       pageInfo: {
         hasNextPage,
         endCursor: slice.length ? encodeCursor(slice[slice.length - 1].id) : null,
       },
     };
   }
-}
-
-function toModel(u: UserRow) {
-  return {
-    ...u,
-    fullName: `${u.firstName} ${u.lastName}`,
-  };
 }

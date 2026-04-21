@@ -26,10 +26,10 @@ pnpm dev                 # arranca en http://localhost:3000
 Abrir `http://localhost:3000/graphql` en el navegador para ver Apollo Sandbox, y ejecutar:
 
 ```graphql
-{ ping }
+{ apiVersion }
 ```
 
-Debe devolver `"pong"`.
+Debe devolver una cadena como `"0.0.1"`.
 
 ## Scripts
 
