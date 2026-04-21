@@ -3,7 +3,11 @@ import { PrismaClient } from '@prisma/client';
 import { z } from 'zod';
 
 const schema = z.object({
-  email: z.string().trim().email().transform((v) => v.toLowerCase()),
+  email: z
+    .string()
+    .trim()
+    .email()
+    .transform((v) => v.toLowerCase()),
   firstName: z.string().trim().min(1).max(100),
   lastName: z.string().trim().min(1).max(100),
 });
@@ -20,7 +24,9 @@ async function main() {
   const input = schema.safeParse(values);
   if (!input.success) {
     console.error('Missing or invalid arguments. Usage:');
-    console.error('  pnpm tsx scripts/create-pastor.ts --email jane@x.com --firstName Jane --lastName Doe');
+    console.error(
+      '  pnpm tsx scripts/create-pastor.ts --email jane@x.com --firstName Jane --lastName Doe',
+    );
     console.error('Errors:', input.error.issues);
     process.exit(1);
   }

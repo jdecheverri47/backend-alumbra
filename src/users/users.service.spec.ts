@@ -1,4 +1,5 @@
 import { Test } from '@nestjs/testing';
+import { requireLocalDb } from '../../test/setup/require-local-db';
 import { PrismaService } from '../prisma/prisma.service';
 import { UsersService } from './users.service';
 
@@ -7,6 +8,7 @@ describe('UsersService', () => {
   let prisma: PrismaService;
 
   beforeAll(async () => {
+    requireLocalDb();
     const moduleRef = await Test.createTestingModule({
       providers: [UsersService, PrismaService],
     }).compile();
@@ -30,7 +32,11 @@ describe('UsersService', () => {
   });
 
   it('creates a user with base role ASISTENTE and normalized email', async () => {
-    const u = await service.create({ email: 'JANE@EXAMPLE.COM', firstName: 'Jane', lastName: 'Doe' });
+    const u = await service.create({
+      email: 'JANE@EXAMPLE.COM',
+      firstName: 'Jane',
+      lastName: 'Doe',
+    });
     expect(u.email).toBe('jane@example.com');
     expect(u.baseRole).toBe('ASISTENTE');
     expect(u.isPastor).toBe(false);

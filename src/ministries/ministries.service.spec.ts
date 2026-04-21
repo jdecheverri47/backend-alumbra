@@ -1,4 +1,5 @@
 import { Test } from '@nestjs/testing';
+import { requireLocalDb } from '../../test/setup/require-local-db';
 import { PrismaService } from '../prisma/prisma.service';
 import { UsersService } from '../users/users.service';
 import { MinistriesService } from './ministries.service';
@@ -9,6 +10,7 @@ describe('MinistriesService', () => {
   let prisma: PrismaService;
 
   beforeAll(async () => {
+    requireLocalDb();
     const moduleRef = await Test.createTestingModule({
       providers: [MinistriesService, UsersService, PrismaService],
     }).compile();
@@ -35,9 +37,7 @@ describe('MinistriesService', () => {
   it('creates a ministry with a unique slug', async () => {
     const m = await service.create({ slug: 'alabanza', name: 'Alabanza' });
     expect(m.slug).toBe('alabanza');
-    await expect(
-      service.create({ slug: 'alabanza', name: 'Duplicado' }),
-    ).rejects.toThrow(/slug/i);
+    await expect(service.create({ slug: 'alabanza', name: 'Duplicado' })).rejects.toThrow(/slug/i);
   });
 
   it('findBySlug excludes archived by default', async () => {

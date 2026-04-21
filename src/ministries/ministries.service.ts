@@ -1,5 +1,5 @@
 import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
-import { Ministry, MinistryMembership, MinistryRole, Prisma } from '@prisma/client';
+import { Ministry, MinistryMembership, MinistryRole, Prisma, User } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { createMinistrySchema, updateMinistrySchema } from './dto/inputs.schema';
 
@@ -25,7 +25,10 @@ export class MinistriesService {
     return this.prisma.ministry.update({ where: { id }, data });
   }
 
-  async findBySlug(slug: string, opts: { includeArchived?: boolean } = {}): Promise<Ministry | null> {
+  async findBySlug(
+    slug: string,
+    opts: { includeArchived?: boolean } = {},
+  ): Promise<Ministry | null> {
     const m = await this.prisma.ministry.findUnique({ where: { slug } });
     if (!m) return null;
     if (!opts.includeArchived && m.archivedAt) return null;
@@ -88,14 +91,16 @@ export class MinistriesService {
   async listMembers(
     ministryId: string,
     opts: { role?: MinistryRole; includeLeft?: boolean } = {},
-  ): Promise<MinistryMembership[]> {
+  ): Promise<Array<MinistryMembership & { user: User }>> {
     return this.prisma.ministryMembership.findMany({
       where: {
         ministryId,
         ...(opts.role ? { role: opts.role } : {}),
         ...(opts.includeLeft ? {} : { leftAt: null }),
+        user: { deletedAt: null },
       },
       orderBy: { joinedAt: 'desc' },
+      include: { user: true },
     });
   }
 }

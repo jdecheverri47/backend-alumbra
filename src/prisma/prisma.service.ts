@@ -20,6 +20,8 @@ export class PrismaService extends PrismaClient implements OnModuleInit, OnModul
   }
 
   private installSoftDeleteMiddleware(): void {
+    // TODO(prisma-v6): migrate from the deprecated $use middleware to $extends client extensions.
+    // See https://www.prisma.io/docs/orm/prisma-client/client-extensions
     this.$use(async (params, next) => {
       if (params.model !== 'User') {
         return next(params);
@@ -43,7 +45,11 @@ export class PrismaService extends PrismaClient implements OnModuleInit, OnModul
         return next(params);
       }
 
-      if (params.action === 'findMany' || params.action === 'findFirst' || params.action === 'count') {
+      if (
+        params.action === 'findMany' ||
+        params.action === 'findFirst' ||
+        params.action === 'count'
+      ) {
         params.args = params.args ?? {};
         const where = (params.args.where ?? {}) as Prisma.UserWhereInput;
         if (where.deletedAt === undefined) {

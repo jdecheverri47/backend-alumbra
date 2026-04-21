@@ -48,12 +48,11 @@ export class UsersService {
 
   async softDelete(id: string): Promise<UserRow> {
     await this.findByIdOrThrow(id);
-    await this.prisma.user.delete({ where: { id } });
-    // After soft-delete the user is not returned by findFirst. Return raw row for confirmation.
-    const [row] = await this.prisma.$queryRaw<UserRow[]>`
-      SELECT * FROM "User" WHERE id = ${id}
-    `;
-    return row;
+    // Directly update deletedAt — honest and avoids the $queryRaw re-fetch hack.
+    return this.prisma.user.update({
+      where: { id },
+      data: { deletedAt: new Date() },
+    });
   }
 
   async setPastor(id: string, isPastor: boolean): Promise<UserRow> {
@@ -85,9 +84,7 @@ export class UsersService {
       where,
       orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
       take,
-      ...(page.after
-        ? { cursor: { id: decodeCursor(page.after) }, skip: 1 }
-        : {}),
+      ...(page.after ? { cursor: { id: decodeCursor(page.after) }, skip: 1 } : {}),
     });
 
     const hasNextPage = rows.length > page.first;

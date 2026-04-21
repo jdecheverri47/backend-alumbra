@@ -21,9 +21,7 @@ describe('validateEnv', () => {
   });
 
   it('throws when DATABASE_URL is missing', () => {
-    expect(() =>
-      validateEnv({ NODE_ENV: 'development' }),
-    ).toThrow(/DATABASE_URL/);
+    expect(() => validateEnv({ NODE_ENV: 'development' })).toThrow(/DATABASE_URL/);
   });
 
   it('throws when DATABASE_URL is not a URL', () => {

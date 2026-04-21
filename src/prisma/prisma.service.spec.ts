@@ -1,9 +1,11 @@
+import { requireLocalDb } from '../../test/setup/require-local-db';
 import { PrismaService } from './prisma.service';
 
 describe('PrismaService soft-delete middleware for User', () => {
   let prisma: PrismaService;
 
   beforeAll(async () => {
+    requireLocalDb();
     prisma = new PrismaService();
     await prisma.$connect();
     // Clean slate for the test

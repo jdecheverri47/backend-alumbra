@@ -34,16 +34,14 @@ export class MinistriesResolver {
     @Args('includeLeft', { defaultValue: false }) includeLeft?: boolean,
   ): Promise<MinistryMembershipModel[]> {
     const rows = await this.ministriesSvc.listMembers(ministry.id, { role, includeLeft });
-    return Promise.all(
-      rows.map(async (m) => ({
-        id: m.id,
-        role: m.role,
-        joinedAt: m.joinedAt,
-        leftAt: m.leftAt,
-        user: toUserModel(await this.usersSvc.findByIdOrThrow(m.userId)),
-        ministry,
-      })),
-    );
+    return rows.map((m) => ({
+      id: m.id,
+      role: m.role,
+      joinedAt: m.joinedAt,
+      leftAt: m.leftAt,
+      user: toUserModel(m.user),
+      ministry,
+    }));
   }
 
   @Mutation(() => MinistryModel)

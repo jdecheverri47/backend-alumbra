@@ -1,11 +1,9 @@
-import { Module, forwardRef } from '@nestjs/common';
-import { MinistriesModule } from '../ministries/ministries.module';
+import { Module } from '@nestjs/common';
 import { UsersFieldResolver } from './users.field.resolver';
 import { UsersResolver } from './users.resolver';
 import { UsersService } from './users.service';
 
 @Module({
-  imports: [forwardRef(() => MinistriesModule)],
   providers: [UsersResolver, UsersFieldResolver, UsersService],
   exports: [UsersService],
 })

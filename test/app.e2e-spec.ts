@@ -3,6 +3,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { PrismaClient } from '@prisma/client';
 import request from 'supertest';
 import { AppModule } from '../src/app.module';
+import { requireLocalDb } from './setup/require-local-db';
 
 const gql = (app: INestApplication) => request(app.getHttpServer()).post('/graphql');
 
@@ -11,6 +12,7 @@ describe('Spec A happy path (e2e)', () => {
   let prisma: PrismaClient;
 
   beforeAll(async () => {
+    requireLocalDb();
     const moduleRef: TestingModule = await Test.createTestingModule({
       imports: [AppModule],
     }).compile();
