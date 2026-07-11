@@ -124,6 +124,53 @@ export class GroupsService {
     });
   }
 
+  /**
+   * Cohortes de la Ruta con su estado, para agrupar por líder en el tablero.
+   * Pastores ven todas; un líder solo las suyas.
+   */
+  async rutaCohortOverviews(me: AuthenticatedUser) {
+    const groups = await this.prisma.group.findMany({
+      where: {
+        archivedAt: null,
+        course: { slug: RUTA_SLUG },
+        ...(me.isPastor ? {} : { leaderId: me.sub }),
+      },
+      include: {
+        ...GROUP_INCLUDE,
+        memberships: { where: { leftAt: null }, select: { id: true } },
+        sessions: {
+          select: { lessonId: true, status: true, startsAt: true, title: true },
+          orderBy: { startsAt: 'asc' },
+        },
+      },
+      orderBy: [{ leaderId: 'asc' }, { name: 'asc' }],
+    });
+
+    const lessonsTotal = await this.prisma.courseLesson.count({
+      where: { topic: { course: { slug: RUTA_SLUG } } },
+    });
+
+    const now = new Date();
+    return groups.map((group) => {
+      const completedLessons = new Set(
+        group.sessions
+          .filter((s) => s.lessonId && s.status === 'COMPLETADA')
+          .map((s) => s.lessonId),
+      );
+      const next = group.sessions.find(
+        (s) => s.startsAt >= now && s.status !== 'CANCELADA' && s.status !== 'COMPLETADA',
+      );
+      return {
+        group,
+        studentCount: group.memberships.length,
+        lessonsTotal,
+        lessonsCompleted: completedLessons.size,
+        nextSessionAt: next?.startsAt ?? null,
+        nextSessionTitle: next?.title ?? null,
+      };
+    });
+  }
+
   async listMembers(groupId: string): Promise<Array<GroupMembership & { user: User }>> {
     return this.prisma.groupMembership.findMany({
       where: { groupId, leftAt: null, user: { deletedAt: null } },

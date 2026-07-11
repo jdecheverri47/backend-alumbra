@@ -351,6 +351,42 @@ describe('Membership pipeline (integration)', () => {
     expect(cohorte.leader.id).toBe(miembro.id);
   });
 
+  it('rutaCohorts: el pastor ve todas las cohortes con su estado; el líder solo las suyas', async () => {
+    // Segunda cohorte dirigida por un líder asignado.
+    await prisma.user.update({ where: { id: miembro.id }, data: { isLeader: true } });
+    const liderUser = await prisma.user.findUniqueOrThrow({ where: { id: miembro.id } });
+    await groups.create(asAuth(pastor), {
+      type: 'CURSO',
+      name: 'Ruta 2026-2',
+      courseId: rutaCourseId,
+      leaderId: miembro.id,
+    });
+
+    // Una clase del temario completada en la cohorte del pastor.
+    const topics = await prisma.courseTopic.findMany({
+      where: { courseId: rutaCourseId },
+      orderBy: { order: 'asc' },
+      include: { lessons: { orderBy: { order: 'asc' } } },
+    });
+    const firstLesson = topics[0].lessons[0];
+    const session = await sessions.create(asAuth(pastor), {
+      groupId: rutaCohortId,
+      scheduledFor: new Date('2026-07-16T19:00:00-05:00'),
+      lessonId: firstLesson.id,
+    });
+    await sessions.complete(asAuth(pastor), session.id);
+
+    const asPastor = await groups.rutaCohortOverviews(asAuth(pastor));
+    expect(asPastor).toHaveLength(2);
+    const primera = asPastor.find((c) => c.group.id === rutaCohortId);
+    expect(primera?.lessonsCompleted).toBe(1);
+    expect(primera?.lessonsTotal).toBeGreaterThan(5);
+
+    const asLeader = await groups.rutaCohortOverviews(asAuth(liderUser));
+    expect(asLeader).toHaveLength(1);
+    expect(asLeader[0].group.name).toBe('Ruta 2026-2');
+  });
+
   it('certifyCourseCompletion exige liderar cohorte del curso o ser pastor', async () => {
     await expect(
       courses.certifyCompletion(asAuth(miembro), candidato.id, evangelioCourseId),

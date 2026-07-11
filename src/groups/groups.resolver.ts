@@ -5,7 +5,7 @@ import { AuthenticatedUser } from '../auth/types/authenticated-user';
 import { AddUserToGroupInput } from './dto/add-user-to-group.input';
 import { CreateGroupInput } from './dto/create-group.input';
 import { GroupMembershipModel } from './dto/group-membership.model';
-import { GroupModel } from './dto/group.model';
+import { GroupModel, RutaCohortOverviewModel } from './dto/group.model';
 import { toGroupMembershipModel, toGroupModel } from './dto/to-group-model';
 import { UpdateGroupInput } from './dto/update-group.input';
 import { GroupsService } from './groups.service';
@@ -35,6 +35,14 @@ export class GroupsResolver {
   ): Promise<GroupModel[]> {
     const groups = await this.groupsService.list({ includeArchived });
     return groups.map(toGroupModel);
+  }
+
+  @Query(() => [RutaCohortOverviewModel], {
+    description: 'Cohortes de la Ruta con su estado. Pastores: todas; líderes: las suyas.',
+  })
+  async rutaCohorts(@CurrentUser() me: AuthenticatedUser): Promise<RutaCohortOverviewModel[]> {
+    const rows = await this.groupsService.rutaCohortOverviews(me);
+    return rows.map((row) => ({ ...row, group: toGroupModel(row.group) }));
   }
 
   @ResolveField(() => [GroupMembershipModel])

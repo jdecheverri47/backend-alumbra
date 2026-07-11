@@ -49,3 +49,26 @@ export class GroupModel {
   @Field(() => Date)
   createdAt!: Date;
 }
+
+@ObjectType('RutaCohortOverview', {
+  description: 'Resumen de una cohorte de la Ruta para el tablero pastoral.',
+})
+export class RutaCohortOverviewModel {
+  @Field(() => GroupModel)
+  group!: GroupModel;
+
+  @Field(() => Int, { description: 'Aspirantes activos en la cohorte.' })
+  studentCount!: number;
+
+  @Field(() => Int)
+  lessonsTotal!: number;
+
+  @Field(() => Int, { description: 'Clases del temario marcadas como completadas.' })
+  lessonsCompleted!: number;
+
+  @Field(() => Date, { nullable: true })
+  nextSessionAt?: Date | null;
+
+  @Field(() => String, { nullable: true })
+  nextSessionTitle?: string | null;
+}

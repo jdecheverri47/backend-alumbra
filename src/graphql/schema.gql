@@ -540,6 +540,11 @@ type Query {
 
   """Comentarios de un post, más antiguo primero."""
   postComments(postId: ID!): [PostComment!]!
+
+  """
+  Cohortes de la Ruta con su estado. Pastores: todas; líderes: las suyas.
+  """
+  rutaCohorts: [RutaCohortOverview!]!
   user(id: ID!): User
   users(filter: UserFilterInput, pagination: PaginationInput): UserConnection!
 }
@@ -579,6 +584,20 @@ type RutaClassTrace {
   status: GroupSessionStatus!
   title: String
   topicTitle: String
+}
+
+"""Resumen de una cohorte de la Ruta para el tablero pastoral."""
+type RutaCohortOverview {
+  group: Group!
+
+  """Clases del temario marcadas como completadas."""
+  lessonsCompleted: Int!
+  lessonsTotal: Int!
+  nextSessionAt: DateTime
+  nextSessionTitle: String
+
+  """Aspirantes activos en la cohorte."""
+  studentCount: Int!
 }
 
 type RutaProgress {
