@@ -565,6 +565,9 @@ type RutaClassTrace {
 
   """Hora de ingreso registrada."""
   checkedInAt: DateTime
+
+  """Clase del currículo que implementa."""
+  lessonId: ID
   sessionId: ID!
   startsAt: DateTime!
   status: GroupSessionStatus!

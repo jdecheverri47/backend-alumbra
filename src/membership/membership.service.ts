@@ -400,6 +400,7 @@ export class MembershipService {
 
     const classes = sessions.map((session) => ({
       sessionId: session.id,
+      lessonId: session.lessonId,
       startsAt: session.startsAt,
       status: session.status,
       title: session.title ?? session.lesson?.title ?? null,

@@ -26,6 +26,9 @@ export class RutaClassTraceModel {
   @Field(() => ID)
   sessionId!: string;
 
+  @Field(() => ID, { nullable: true, description: 'Clase del currículo que implementa.' })
+  lessonId?: string | null;
+
   @Field(() => Date)
   startsAt!: Date;
 
