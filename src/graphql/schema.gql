@@ -67,6 +67,9 @@ type CourseCompletion {
   completedAt: DateTime!
   course: Course!
   id: ID!
+
+  """La persona certificada."""
+  user: User
 }
 
 """
@@ -529,6 +532,9 @@ type Query {
   Cursos certificados de una persona (la propia persona, líderes y pastores).
   """
   courseCompletions(userId: ID!): [CourseCompletion!]!
+
+  """Certificaciones de un curso, para marcar aprobados en una cohorte."""
+  courseCompletionsByCourse(courseId: ID!): [CourseCompletion!]!
 
   """Cursos con su currículo (temas → clases → tareas)."""
   courses: [Course!]!

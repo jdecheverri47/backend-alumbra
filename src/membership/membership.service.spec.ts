@@ -526,18 +526,27 @@ describe('Membership pipeline (integration)', () => {
     expect(members).toHaveLength(2);
   });
 
-  it('certifyCourseCompletion exige liderar cohorte del curso o ser pastor', async () => {
+  it('aprobar Evangelio: el líder solo después de cerrar su cohorte (pastor siempre)', async () => {
     await expect(
       courses.certifyCompletion(asAuth(miembro), candidato.id, evangelioCourseId),
     ).rejects.toThrow(/líder|pastor/i);
 
-    // El líder de una cohorte de Evangelio sí puede.
-    await groups.create(asAuth(pastor), {
+    // Cohorte de Evangelio con el candidato adentro, liderada por el miembro.
+    const cohorte = await groups.create(asAuth(pastor), {
       type: 'CURSO',
       name: 'Evangelio 2026-1',
       courseId: evangelioCourseId,
       leaderId: miembro.id,
     });
+    await groups.addMember(asAuth(miembro), { userId: candidato.id, groupId: cohorte.id });
+
+    // Con la cohorte abierta el líder aún no puede aprobar.
+    await expect(
+      courses.certifyCompletion(asAuth(miembro), candidato.id, evangelioCourseId),
+    ).rejects.toThrow(/cerrada|pastor/i);
+
+    // Al cerrarla, sí — y solo a quienes pertenecen a ella.
+    await groups.archive(asAuth(miembro), cohorte.id);
     const completion = await courses.certifyCompletion(
       asAuth(miembro),
       candidato.id,
@@ -545,5 +554,12 @@ describe('Membership pipeline (integration)', () => {
     );
     expect(completion.course.slug).toBe('evangelio');
     expect(await courses.hasCompleted(candidato.id, 'evangelio')).toBe(true);
+
+    const externo = await prisma.user.create({
+      data: { email: 'fuera@x.com', firstName: 'F', lastName: 'A', baseRole: 'ASISTENTE' },
+    });
+    await expect(
+      courses.certifyCompletion(asAuth(miembro), externo.id, evangelioCourseId),
+    ).rejects.toThrow(/cerrada|pastor/i);
   });
 });

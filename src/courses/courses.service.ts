@@ -92,6 +92,30 @@ export class CoursesService {
     return rows.map((row) => this.toEnrollmentModel(row));
   }
 
+  /** Certificaciones de un curso (para marcar aprobados en una cohorte). Pastor o líder de cohorte. */
+  async completionsByCourse(
+    me: AuthenticatedUser,
+    courseId: string,
+  ): Promise<CourseCompletionModel[]> {
+    if (!me.isPastor) {
+      const ledCohort = await this.prisma.group.findFirst({
+        where: { courseId, leaderId: me.sub, archivedAt: null },
+      });
+      if (!ledCohort) {
+        throw new ForbiddenException({
+          error: 'FORBIDDEN',
+          message: 'Solo pastores o líderes de cohortes del curso ven las aprobaciones.',
+        });
+      }
+    }
+    const rows = await this.prisma.courseCompletion.findMany({
+      where: { courseId },
+      include: { course: { include: COURSE_INCLUDE }, certifiedBy: true, user: true },
+      orderBy: { completedAt: 'asc' },
+    });
+    return rows.map((row) => ({ ...this.toCompletionModel(row), user: toUserModel(row.user) }));
+  }
+
   /** Mueve al inscrito a una cohorte (pastor, o líder de la cohorte destino). */
   async placeEnrollment(
     me: AuthenticatedUser,
@@ -170,7 +194,11 @@ export class CoursesService {
     return Boolean(completion);
   }
 
-  /** Certifica que una persona terminó un curso. Líder de una cohorte del curso o pastor. */
+  /**
+   * Certifica que una persona aprobó un curso. Pastor, o el líder de una cohorte
+   * del curso YA CERRADA a la que la persona pertenece (la aprobación se decide
+   * al cierre: puede perderse por inasistencia).
+   */
   async certifyCompletion(
     me: AuthenticatedUser,
     userId: string,
@@ -180,13 +208,19 @@ export class CoursesService {
     if (!course) throw new NotFoundException(`Course ${courseId} not found.`);
 
     if (!me.isPastor) {
-      const ledCohort = await this.prisma.group.findFirst({
-        where: { courseId, leaderId: me.sub, archivedAt: null },
+      const closedCohortWithStudent = await this.prisma.group.findFirst({
+        where: {
+          courseId,
+          leaderId: me.sub,
+          archivedAt: { not: null },
+          memberships: { some: { userId, leftAt: null } },
+        },
       });
-      if (!ledCohort) {
+      if (!closedCohortWithStudent) {
         throw new ForbiddenException({
           error: 'FORBIDDEN',
-          message: 'Solo el líder de una cohorte del curso o un pastor puede certificarlo.',
+          message:
+            'Solo un pastor, o el líder de una cohorte cerrada del curso a la que pertenezca la persona, puede aprobarla.',
         });
       }
     }

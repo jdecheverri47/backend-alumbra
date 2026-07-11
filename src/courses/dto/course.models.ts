@@ -107,6 +107,9 @@ export class CourseCompletionModel {
   @Field(() => ID)
   id!: string;
 
+  @Field(() => UserModel, { nullable: true, description: 'La persona certificada.' })
+  user?: UserModel | null;
+
   @Field(() => CourseModel)
   course!: CourseModel;
 

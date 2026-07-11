@@ -23,6 +23,17 @@ export class CoursesResolver {
     return this.coursesService.completionsFor(me, userId);
   }
 
+  // Pastores o líderes de cohortes del curso (validado en el service).
+  @Query(() => [CourseCompletionModel], {
+    description: 'Certificaciones de un curso, para marcar aprobados en una cohorte.',
+  })
+  async courseCompletionsByCourse(
+    @Args('courseId', { type: () => ID }) courseId: string,
+    @CurrentUser() me: AuthenticatedUser,
+  ): Promise<CourseCompletionModel[]> {
+    return this.coursesService.completionsByCourse(me, courseId);
+  }
+
   @Query(() => [CourseEnrollmentModel], { description: 'Mis inscripciones a cursos.' })
   async myCourseEnrollments(
     @CurrentUser() me: AuthenticatedUser,
