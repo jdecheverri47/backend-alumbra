@@ -25,6 +25,7 @@ enum GroupType {
 
 enum JourneyStage {
   PRE_ENTREVISTA
+  APLAZADO
   VALIDADO
   EN_RUTA
   ENTREGA_FINAL
@@ -94,6 +95,7 @@ model User {
   certifiedCompletions CourseCompletion[]    @relation("CompletionCertifier")
   membershipJourney   MembershipJourney?     @relation("JourneyUser")
   interviewedJourneys MembershipJourney[]    @relation("JourneyInterviewer")
+  assignedJourneys    MembershipJourney[]    @relation("JourneyAssignedLeader")
   churchObservations  ChurchObservation[]
 
   createdAt DateTime  @default(now())
@@ -356,6 +358,9 @@ model MembershipJourney {
 
   validatedAt DateTime?
 
+  // Líder de ruta al que se asignó el candidato (él decide la cohorte).
+  assignedLeaderId String?
+
   rutaGroupId     String?
   rutaCompletedAt DateTime?
 
@@ -374,9 +379,10 @@ model MembershipJourney {
   // Notas internas pastorales.
   notes String?
 
-  user        User   @relation("JourneyUser", fields: [userId], references: [id])
-  interviewer User?  @relation("JourneyInterviewer", fields: [interviewerId], references: [id])
-  rutaGroup   Group? @relation("JourneyRutaGroup", fields: [rutaGroupId], references: [id])
+  user           User   @relation("JourneyUser", fields: [userId], references: [id])
+  interviewer    User?  @relation("JourneyInterviewer", fields: [interviewerId], references: [id])
+  assignedLeader User?  @relation("JourneyAssignedLeader", fields: [assignedLeaderId], references: [id])
+  rutaGroup      Group? @relation("JourneyRutaGroup", fields: [rutaGroupId], references: [id])
 
   observations ChurchObservation[]
 

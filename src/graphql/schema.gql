@@ -273,6 +273,7 @@ enum GroupType {
 }
 
 enum JourneyStage {
+  APLAZADO
   ENTREGA_FINAL
   ENTREVISTA_PASTORAL
   EN_RUTA
@@ -292,6 +293,8 @@ input MembershipInfoInput {
 }
 
 type MembershipJourney {
+  """Líder de ruta asignado (él decide la cohorte)."""
+  assignedLeader: User
   churchFilterClosedAt: DateTime
   churchFilterOpenedAt: DateTime
   churchFilterPassed: Boolean
@@ -357,6 +360,9 @@ type Mutation {
   archiveGroup(id: ID!): Group!
   archiveMinistry(id: ID!): Ministry!
 
+  """Asigna el candidato a un líder de ruta; el líder decide la cohorte."""
+  assignJourneyToLeader(id: ID!, leaderId: ID!): MembershipJourney!
+
   """Asigna a una cohorte de la Ruta."""
   assignJourneyToRuta(groupId: ID!, id: ID!): MembershipJourney!
   cancelGroupSession(id: ID!, note: String): GroupSession!
@@ -378,6 +384,9 @@ type Mutation {
   createPost(input: CreatePostInput!): Post!
   createSessionAssignment(input: CreateSessionAssignmentInput!): SessionAssignment!
   createUser(input: CreateUserInput!): User!
+
+  """Aplaza al candidato a una próxima ruta."""
+  deferJourney(id: ID!, notes: String): MembershipJourney!
   deleteEvent(id: ID!): Event!
   deletePost(id: ID!): Post!
   deletePostComment(id: ID!): PostComment!
@@ -394,6 +403,9 @@ type Mutation {
 
   """Reprogramar (reactiva si estaba cancelada)."""
   rescheduleGroupSession(id: ID!, note: String, startsAt: DateTime!): GroupSession!
+
+  """Agenda o reprograma la entrevista."""
+  scheduleJourneyInterview(at: DateTime!, id: ID!): MembershipJourney!
   setPostPinned(id: ID!, pinned: Boolean!): Post!
 
   """Otorga o revoca el rol de líder a un miembro."""
@@ -524,6 +536,9 @@ type Query {
   membershipJourneys(stage: JourneyStage): [MembershipJourney!]!
   ministries(includeArchived: Boolean! = false): [Ministry!]!
   ministry(slug: String!): Ministry
+
+  """Candidatos asignados a mí como líder de ruta, pendientes de cohorte."""
+  myAssignedCandidates: [MembershipJourney!]!
   myFeedPermissions: FeedPermissions!
 
   """Grupos donde soy miembro activo o líder."""

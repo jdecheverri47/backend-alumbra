@@ -22,6 +22,7 @@ import {
 const JOURNEY_INCLUDE = {
   user: true,
   interviewer: true,
+  assignedLeader: true,
   rutaGroup: { include: { leader: true } },
 };
 
@@ -168,6 +169,75 @@ export class MembershipService {
     }
   }
 
+  /** Agenda (o reprograma) la entrevista inicial. */
+  async scheduleInterview(
+    me: AuthenticatedUser,
+    journeyId: string,
+    at: Date,
+  ): Promise<MembershipJourneyModel> {
+    const journey = await this.getOrThrow(journeyId);
+    this.assertInterviewerOrPastor(me, journey);
+    this.assertStage(journey, ['PRE_ENTREVISTA', 'APLAZADO']);
+    const row = await this.prisma.membershipJourney.update({
+      where: { id: journeyId },
+      // Reagendar desde APLAZADO reabre la pre-entrevista.
+      data: { preInterviewAt: at, stage: 'PRE_ENTREVISTA' },
+      include: JOURNEY_INCLUDE,
+    });
+    return this.withProgress(row, { includeInternal: true });
+  }
+
+  /** Aplaza al candidato para una próxima ruta (puede validarse más adelante). */
+  async defer(
+    me: AuthenticatedUser,
+    journeyId: string,
+    notes?: string,
+  ): Promise<MembershipJourneyModel> {
+    const journey = await this.getOrThrow(journeyId);
+    this.assertInterviewerOrPastor(me, journey);
+    this.assertStage(journey, ['PRE_ENTREVISTA', 'VALIDADO']);
+    const row = await this.prisma.membershipJourney.update({
+      where: { id: journeyId },
+      data: { stage: 'APLAZADO', notes: notes ?? journey.notes },
+      include: JOURNEY_INCLUDE,
+    });
+    return this.withProgress(row, { includeInternal: true });
+  }
+
+  /** Asigna el candidato a un líder de ruta; el líder decide en qué cohorte ubicarlo. */
+  async assignToLeader(
+    me: AuthenticatedUser,
+    journeyId: string,
+    leaderId: string,
+  ): Promise<MembershipJourneyModel> {
+    const journey = await this.getOrThrow(journeyId);
+    this.assertInterviewerOrPastor(me, journey);
+    this.assertStage(journey, 'VALIDADO');
+
+    const leader = await this.prisma.user.findFirst({ where: { id: leaderId } });
+    if (!leader) throw new NotFoundException(`User ${leaderId} not found.`);
+    if (!leader.isPastor && !leader.isLeader) {
+      throw new BadRequestException('Solo se puede asignar a un líder de ruta o un pastor.');
+    }
+
+    const row = await this.prisma.membershipJourney.update({
+      where: { id: journeyId },
+      data: { assignedLeaderId: leaderId },
+      include: JOURNEY_INCLUDE,
+    });
+    return this.withProgress(row, { includeInternal: true });
+  }
+
+  /** Candidatos asignados a mí como líder de ruta, pendientes de cohorte. */
+  async myAssignedCandidates(me: AuthenticatedUser): Promise<MembershipJourneyModel[]> {
+    const rows = await this.prisma.membershipJourney.findMany({
+      where: { assignedLeaderId: me.sub, stage: 'VALIDADO' },
+      include: JOURNEY_INCLUDE,
+      orderBy: { updatedAt: 'desc' },
+    });
+    return Promise.all(rows.map((row) => this.withProgress(row, { includeInternal: false })));
+  }
+
   /** El entrevistador (o un pastor) valida la entrada a la Ruta. Exige Evangelio terminado. */
   async validate(
     me: AuthenticatedUser,
@@ -177,7 +247,7 @@ export class MembershipService {
   ): Promise<MembershipJourneyModel> {
     const journey = await this.getOrThrow(journeyId);
     this.assertInterviewerOrPastor(me, journey);
-    this.assertStage(journey, 'PRE_ENTREVISTA');
+    this.assertStage(journey, ['PRE_ENTREVISTA', 'APLAZADO']);
 
     if (approved) {
       const evangelio = await this.prisma.courseCompletion.findFirst({
@@ -202,14 +272,17 @@ export class MembershipService {
     return this.toModel(row, { includeInternal: true });
   }
 
-  /** Asigna el candidato a una cohorte de la Ruta (lo agrega al grupo). */
+  /**
+   * Ubica al candidato en una cohorte de la Ruta (lo agrega al grupo).
+   * Pueden hacerlo el entrevistador, un pastor, o el líder asignado hacia
+   * una cohorte que él mismo dirige.
+   */
   async assignToRuta(
     me: AuthenticatedUser,
     journeyId: string,
     groupId: string,
   ): Promise<MembershipJourneyModel> {
     const journey = await this.getOrThrow(journeyId);
-    this.assertInterviewerOrPastor(me, journey);
     this.assertStage(journey, 'VALIDADO');
 
     const group = await this.prisma.group.findUnique({
@@ -219,6 +292,16 @@ export class MembershipService {
     if (!group) throw new NotFoundException(`Group ${groupId} not found.`);
     if (group.course?.slug !== RUTA_SLUG || group.archivedAt) {
       throw new BadRequestException('El grupo debe ser una cohorte activa de la Ruta.');
+    }
+
+    const isAssignedLeaderPlacing =
+      journey.assignedLeaderId === me.sub && group.leaderId === me.sub;
+    if (!me.isPastor && journey.interviewerId !== me.sub && !isAssignedLeaderPlacing) {
+      throw new ForbiddenException({
+        error: 'FORBIDDEN',
+        message:
+          'Solo el entrevistador, un pastor o el líder asignado (hacia su propia cohorte) puede ubicar al candidato.',
+      });
     }
 
     const activeMembership = await this.prisma.groupMembership.findFirst({
@@ -232,7 +315,8 @@ export class MembershipService {
 
     const row = await this.prisma.membershipJourney.update({
       where: { id: journeyId },
-      data: { stage: 'EN_RUTA', rutaGroupId: groupId },
+      // El líder de la cohorte queda como líder asignado del candidato.
+      data: { stage: 'EN_RUTA', rutaGroupId: groupId, assignedLeaderId: group.leaderId },
       include: JOURNEY_INCLUDE,
     });
     return this.toModel(row, { includeInternal: true });
@@ -387,10 +471,11 @@ export class MembershipService {
     return journey;
   }
 
-  private assertStage(journey: MembershipJourney, expected: JourneyStage): void {
-    if (journey.stage !== expected) {
+  private assertStage(journey: MembershipJourney, expected: JourneyStage | JourneyStage[]): void {
+    const allowed = Array.isArray(expected) ? expected : [expected];
+    if (!allowed.includes(journey.stage)) {
       throw new BadRequestException(
-        `El proceso está en etapa ${journey.stage}; esta acción requiere ${expected}.`,
+        `El proceso está en etapa ${journey.stage}; esta acción requiere ${allowed.join(' o ')}.`,
       );
     }
   }
@@ -467,6 +552,7 @@ export class MembershipService {
       stage: row.stage,
       user: toUserModel(row.user),
       interviewer: row.interviewer ? toUserModel(row.interviewer) : null,
+      assignedLeader: row.assignedLeader ? toUserModel(row.assignedLeader) : null,
       preInterviewAt: row.preInterviewAt,
       preInterviewNotes: opts.includeInternal ? row.preInterviewNotes : null,
       validatedAt: row.validatedAt,

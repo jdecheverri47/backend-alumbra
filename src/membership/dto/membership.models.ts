@@ -83,6 +83,12 @@ export class MembershipJourneyModel {
   @Field(() => UserModel, { nullable: true })
   interviewer?: UserModel | null;
 
+  @Field(() => UserModel, {
+    nullable: true,
+    description: 'Líder de ruta asignado (él decide la cohorte).',
+  })
+  assignedLeader?: UserModel | null;
+
   @Field(() => Date, { nullable: true })
   preInterviewAt?: Date | null;
 

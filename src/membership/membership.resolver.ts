@@ -61,6 +61,15 @@ export class MembershipResolver {
     return this.membershipService.myInterviews(me);
   }
 
+  @Query(() => [MembershipJourneyModel], {
+    description: 'Candidatos asignados a mí como líder de ruta, pendientes de cohorte.',
+  })
+  async myAssignedCandidates(
+    @CurrentUser() me: AuthenticatedUser,
+  ): Promise<MembershipJourneyModel[]> {
+    return this.membershipService.myAssignedCandidates(me);
+  }
+
   @Query(() => MembershipJourneyModel, {
     nullable: true,
     description: 'Proceso de una persona (pastor, entrevistador o la propia persona).',
@@ -116,6 +125,38 @@ export class MembershipResolver {
   }
 
   // Entrevistador o pastor (validado en el service).
+  @Mutation(() => MembershipJourneyModel, { description: 'Agenda o reprograma la entrevista.' })
+  async scheduleJourneyInterview(
+    @Args('id', { type: () => ID }) id: string,
+    @Args('at', { type: () => Date }) at: Date,
+    @CurrentUser() me: AuthenticatedUser,
+  ): Promise<MembershipJourneyModel> {
+    return this.membershipService.scheduleInterview(me, id, at);
+  }
+
+  // Entrevistador o pastor (validado en el service).
+  @Mutation(() => MembershipJourneyModel, { description: 'Aplaza al candidato a una próxima ruta.' })
+  async deferJourney(
+    @Args('id', { type: () => ID }) id: string,
+    @CurrentUser() me: AuthenticatedUser,
+    @Args('notes', { nullable: true }) notes?: string,
+  ): Promise<MembershipJourneyModel> {
+    return this.membershipService.defer(me, id, notes);
+  }
+
+  // Entrevistador o pastor (validado en el service).
+  @Mutation(() => MembershipJourneyModel, {
+    description: 'Asigna el candidato a un líder de ruta; el líder decide la cohorte.',
+  })
+  async assignJourneyToLeader(
+    @Args('id', { type: () => ID }) id: string,
+    @Args('leaderId', { type: () => ID }) leaderId: string,
+    @CurrentUser() me: AuthenticatedUser,
+  ): Promise<MembershipJourneyModel> {
+    return this.membershipService.assignToLeader(me, id, leaderId);
+  }
+
+  // Entrevistador, pastor o líder asignado hacia su cohorte (validado en el service).
   @Mutation(() => MembershipJourneyModel, { description: 'Asigna a una cohorte de la Ruta.' })
   async assignJourneyToRuta(
     @Args('id', { type: () => ID }) id: string,

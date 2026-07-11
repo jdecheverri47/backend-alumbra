@@ -351,6 +351,74 @@ describe('Membership pipeline (integration)', () => {
     expect(cohorte.leader.id).toBe(miembro.id);
   });
 
+  it('aplazar y reagendar: APLAZADO puede validarse después (con Evangelio)', async () => {
+    const journey = await membership.start(asAuth(pastor), { userId: candidato.id });
+
+    const deferred = await membership.defer(asAuth(pastor), journey.id, 'Sin cupo esta ruta');
+    expect(deferred.stage).toBe('APLAZADO');
+
+    // Reagendar entrevista lo devuelve a PRE_ENTREVISTA.
+    const rescheduled = await membership.scheduleInterview(
+      asAuth(pastor),
+      journey.id,
+      new Date('2026-08-01T10:00:00Z'),
+    );
+    expect(rescheduled.stage).toBe('PRE_ENTREVISTA');
+    expect(rescheduled.preInterviewAt?.toISOString()).toContain('2026-08-01');
+
+    // También se puede validar directo desde APLAZADO.
+    await membership.defer(asAuth(pastor), journey.id);
+    await courses.certifyCompletion(asAuth(pastor), candidato.id, evangelioCourseId);
+    const validated = await membership.validate(asAuth(pastor), journey.id, true);
+    expect(validated.stage).toBe('VALIDADO');
+  });
+
+  it('asignar a líder: el líder ubica al candidato en su propia cohorte (y solo en la suya)', async () => {
+    // Líder con cohorte propia.
+    await prisma.user.update({ where: { id: miembro.id }, data: { isLeader: true } });
+    const liderUser = await prisma.user.findUniqueOrThrow({ where: { id: miembro.id } });
+    const suCohorte = await groups.create(asAuth(pastor), {
+      type: 'CURSO',
+      name: 'Ruta del líder',
+      courseId: rutaCourseId,
+      leaderId: miembro.id,
+    });
+
+    const journey = await membership.start(asAuth(pastor), { userId: candidato.id });
+    await courses.certifyCompletion(asAuth(pastor), candidato.id, evangelioCourseId);
+    await membership.validate(asAuth(pastor), journey.id, true);
+
+    // No se puede asignar a un miembro sin rol de líder.
+    const sinRol = await prisma.user.create({
+      data: { email: 'sinrol@x.com', firstName: 'S', lastName: 'R', baseRole: 'MIEMBRO' },
+    });
+    await expect(
+      membership.assignToLeader(asAuth(pastor), journey.id, sinRol.id),
+    ).rejects.toThrow(/líder|pastor/i);
+
+    // Asignado al líder: le aparece en su lista y aún no tiene cohorte.
+    const assigned = await membership.assignToLeader(asAuth(pastor), journey.id, miembro.id);
+    expect(assigned.assignedLeader?.id).toBe(miembro.id);
+    expect(assigned.stage).toBe('VALIDADO');
+    const pendientes = await membership.myAssignedCandidates(asAuth(liderUser));
+    expect(pendientes.map((j) => j.id)).toEqual([journey.id]);
+
+    // El líder no puede ubicarlo en una cohorte ajena…
+    await expect(
+      membership.assignToRuta(asAuth(liderUser), journey.id, rutaCohortId),
+    ).rejects.toThrow(/entrevistador|pastor|líder asignado/i);
+
+    // …pero sí en la suya: queda EN_RUTA, en el grupo, y sale de pendientes.
+    const enRuta = await membership.assignToRuta(asAuth(liderUser), journey.id, suCohorte.id);
+    expect(enRuta.stage).toBe('EN_RUTA');
+    expect(enRuta.rutaGroup?.id).toBe(suCohorte.id);
+    expect(await membership.myAssignedCandidates(asAuth(liderUser))).toHaveLength(0);
+    const membershipRow = await prisma.groupMembership.findFirst({
+      where: { groupId: suCohorte.id, userId: candidato.id, leftAt: null },
+    });
+    expect(membershipRow).not.toBeNull();
+  });
+
   it('rutaCohorts: el pastor ve todas las cohortes con su estado; el líder solo las suyas', async () => {
     // Segunda cohorte dirigida por un líder asignado.
     await prisma.user.update({ where: { id: miembro.id }, data: { isLeader: true } });
