@@ -34,8 +34,10 @@ export class GroupsService {
 
     const leader = await this.prisma.user.findFirst({ where: { id: leaderId } });
     if (!leader) throw new NotFoundException(`User ${leaderId} not found.`);
-    if (data.type === 'MADUREZ' && !leader.isPastor) {
-      throw new BadRequestException('Los grupos de madurez deben ser dirigidos por un pastor.');
+    if (data.type === 'MADUREZ' && !leader.isPastor && !leader.isLeader) {
+      throw new BadRequestException(
+        'Los grupos de madurez deben ser dirigidos por un pastor o un líder asignado.',
+      );
     }
 
     if (data.courseId) {

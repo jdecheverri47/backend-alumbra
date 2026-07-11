@@ -313,6 +313,9 @@ type MembershipJourney {
 
   """Cohorte de la Ruta."""
   rutaGroup: Group
+
+  """Avance del candidato en su cohorte (asistencia y tareas por clase)."""
+  rutaProgress: RutaProgress
   stage: JourneyStage!
   testimony: String
   user: User!
@@ -544,6 +547,39 @@ enum ReactionType {
   AMEN
   LIKE
   LOVE
+}
+
+type RutaAssignmentTrace {
+  submitted: Boolean!
+  submittedAt: DateTime
+  title: String!
+
+  """Archivo entregado (si existe)."""
+  url: String
+}
+
+"""Trazabilidad del candidato en una clase de la Ruta."""
+type RutaClassTrace {
+  assignments: [RutaAssignmentTrace!]!
+  attended: Boolean!
+
+  """Hora de ingreso registrada."""
+  checkedInAt: DateTime
+  sessionId: ID!
+  startsAt: DateTime!
+  status: GroupSessionStatus!
+  title: String
+  topicTitle: String
+}
+
+type RutaProgress {
+  assignmentsSubmitted: Int!
+  assignmentsTotal: Int!
+  classes: [RutaClassTrace!]!
+  sessionsAttended: Int!
+
+  """Clases no canceladas de la cohorte."""
+  sessionsTotal: Int!
 }
 
 type SessionAssignment {

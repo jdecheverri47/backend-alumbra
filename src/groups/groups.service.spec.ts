@@ -71,10 +71,19 @@ describe('GroupsService', () => {
     expect(group.type).toBe('MADUREZ');
   });
 
-  it('rejects a MADUREZ group whose leader is not a pastor', async () => {
+  it('rejects a MADUREZ group whose leader is neither pastor nor líder asignado', async () => {
     await expect(
       service.create(asAuth(pastor), { type: 'MADUREZ', name: 'Madurez X', leaderId: miembro.id }),
-    ).rejects.toThrow(/pastor/i);
+    ).rejects.toThrow(/pastor|líder/i);
+
+    // Con el rol de líder otorgado sí puede dirigirlo.
+    await prisma.user.update({ where: { id: miembro.id }, data: { isLeader: true } });
+    const group = await service.create(asAuth(pastor), {
+      type: 'MADUREZ',
+      name: 'Madurez X',
+      leaderId: miembro.id,
+    });
+    expect(group.leader.id).toBe(miembro.id);
   });
 
   it('allows a CONEXION group led by a non-pastor', async () => {

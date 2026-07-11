@@ -247,6 +247,57 @@ describe('Membership pipeline (integration)', () => {
     expect(second.lesson?.id).toBe(secondLesson.id);
   });
 
+  it('rutaProgress: trazabilidad de asistencia y tareas del candidato, clase por clase', async () => {
+    // Candidato validado y en la cohorte.
+    const journey = await membership.start(asAuth(pastor), { userId: candidato.id });
+    await courses.certifyCompletion(asAuth(pastor), candidato.id, evangelioCourseId);
+    await membership.validate(asAuth(pastor), journey.id, true);
+    await membership.assignToRuta(asAuth(pastor), journey.id, rutaCohortId);
+
+    // Primera clase del temario (trae su tarea de plantilla): asiste y entrega.
+    const topics = await prisma.courseTopic.findMany({
+      where: { courseId: rutaCourseId },
+      orderBy: { order: 'asc' },
+      include: { lessons: { orderBy: { order: 'asc' } } },
+    });
+    const [l1, l2] = topics.flatMap((t) => t.lessons);
+    const s1 = await sessions.create(asAuth(pastor), {
+      groupId: rutaCohortId,
+      scheduledFor: new Date('2026-07-16T19:00:00-05:00'),
+      lessonId: l1.id,
+    });
+    await sessions.checkIn(asAuth(pastor), s1.id, candidato.id);
+    await sessions.submitAssignment(asAuth(candidato), {
+      assignmentId: s1.assignments[0].id,
+      url: '/uploads/tarea1.pdf',
+    });
+
+    // Segunda clase: no asiste ni entrega.
+    await sessions.create(asAuth(pastor), {
+      groupId: rutaCohortId,
+      scheduledFor: new Date('2026-07-23T19:00:00-05:00'),
+      lessonId: l2.id,
+    });
+
+    const board = await membership.list();
+    const progress = board.find((j) => j.id === journey.id)?.rutaProgress;
+    expect(progress).toBeTruthy();
+    expect(progress?.sessionsTotal).toBe(2);
+    expect(progress?.sessionsAttended).toBe(1);
+    expect(progress?.assignmentsSubmitted).toBe(1);
+    expect(progress?.assignmentsTotal).toBeGreaterThanOrEqual(2);
+
+    const clase1 = progress?.classes.find((c) => c.sessionId === s1.id);
+    expect(clase1?.attended).toBe(true);
+    expect(clase1?.checkedInAt).toBeTruthy();
+    expect(clase1?.assignments[0].submitted).toBe(true);
+    expect(clase1?.assignments[0].url).toBe('/uploads/tarea1.pdf');
+
+    // El candidato también ve su propio avance.
+    const mine = await membership.myJourney(asAuth(candidato));
+    expect(mine?.rutaProgress?.sessionsAttended).toBe(1);
+  });
+
   it('las cohortes de la Ruta las dirige un líder asignado o un pastor', async () => {
     // Un miembro sin rol de líder no puede dirigir la Ruta.
     await expect(

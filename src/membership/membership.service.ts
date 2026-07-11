@@ -16,6 +16,7 @@ import {
   ChurchFilterInfoModel,
   ChurchObservationModel,
   MembershipJourneyModel,
+  RutaProgressModel,
 } from './dto/membership.models';
 
 const JOURNEY_INCLUDE = {
@@ -37,8 +38,8 @@ export class MembershipService {
       where: { userId: me.sub },
       include: JOURNEY_INCLUDE,
     });
-    // El candidato no ve las notas internas.
-    return row ? this.toModel(row, { includeInternal: false }) : null;
+    // El candidato no ve las notas internas, pero sí su propio avance.
+    return row ? this.withProgress(row, { includeInternal: false }) : null;
   }
 
   /** Tablero completo — solo pastores (guard en el resolver). */
@@ -48,7 +49,7 @@ export class MembershipService {
       include: JOURNEY_INCLUDE,
       orderBy: { updatedAt: 'desc' },
     });
-    return rows.map((row) => this.toModel(row, { includeInternal: true }));
+    return Promise.all(rows.map((row) => this.withProgress(row, { includeInternal: true })));
   }
 
   async myInterviews(me: AuthenticatedUser): Promise<MembershipJourneyModel[]> {
@@ -57,7 +58,7 @@ export class MembershipService {
       include: JOURNEY_INCLUDE,
       orderBy: { updatedAt: 'desc' },
     });
-    return rows.map((row) => this.toModel(row, { includeInternal: true }));
+    return Promise.all(rows.map((row) => this.withProgress(row, { includeInternal: true })));
   }
 
   async journeyOf(me: AuthenticatedUser, userId: string): Promise<MembershipJourneyModel | null> {
@@ -70,7 +71,7 @@ export class MembershipService {
     if (!privileged && row.userId !== me.sub) {
       throw new ForbiddenException({ error: 'FORBIDDEN', message: 'No autorizado.' });
     }
-    return this.toModel(row, { includeInternal: privileged });
+    return this.withProgress(row, { includeInternal: privileged });
   }
 
   /** Filtro abierto de un candidato, para el formulario de observaciones de los miembros. */
@@ -378,6 +379,59 @@ export class MembershipService {
         `El proceso está en etapa ${journey.stage}; esta acción requiere ${expected}.`,
       );
     }
+  }
+
+  /** Trazabilidad: asistencia y tareas del candidato, clase por clase de su cohorte. */
+  private async rutaProgress(journey: JourneyRow): Promise<RutaProgressModel | null> {
+    if (!journey.rutaGroupId) return null;
+
+    const sessions = await this.prisma.groupSession.findMany({
+      where: { groupId: journey.rutaGroupId },
+      include: {
+        lesson: { include: { topic: true } },
+        assignments: {
+          include: { submissions: { where: { userId: journey.userId } } },
+          orderBy: { createdAt: 'asc' },
+        },
+        attendances: { where: { userId: journey.userId } },
+      },
+      orderBy: { startsAt: 'asc' },
+    });
+
+    const classes = sessions.map((session) => ({
+      sessionId: session.id,
+      startsAt: session.startsAt,
+      status: session.status,
+      title: session.title ?? session.lesson?.title ?? null,
+      topicTitle: session.lesson?.topic.title ?? null,
+      attended: session.attendances.length > 0,
+      checkedInAt: session.attendances[0]?.checkedInAt ?? null,
+      assignments: session.assignments.map((assignment) => ({
+        title: assignment.title,
+        submitted: assignment.submissions.length > 0,
+        submittedAt: assignment.submissions[0]?.submittedAt ?? null,
+        url: assignment.submissions[0]?.url ?? null,
+      })),
+    }));
+
+    const active = classes.filter((c) => c.status !== 'CANCELADA');
+    return {
+      sessionsTotal: active.length,
+      sessionsAttended: active.filter((c) => c.attended).length,
+      assignmentsTotal: active.reduce((sum, c) => sum + c.assignments.length, 0),
+      assignmentsSubmitted: active.reduce(
+        (sum, c) => sum + c.assignments.filter((a) => a.submitted).length,
+        0,
+      ),
+      classes,
+    };
+  }
+
+  private async withProgress(
+    row: JourneyRow,
+    opts: { includeInternal: boolean },
+  ): Promise<MembershipJourneyModel> {
+    return { ...this.toModel(row, opts), rutaProgress: await this.rutaProgress(row) };
   }
 
   private assertInterviewerOrPastor(me: AuthenticatedUser, journey: MembershipJourney): void {
