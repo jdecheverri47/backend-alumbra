@@ -71,18 +71,13 @@ export class GroupSessionsService {
     return this.toModel(row, me, this.isLeaderOrPastor(me, row.group));
   }
 
-  /** Clases de mis grupos (pastor: todas) que tocan el rango, para el calendario. */
+  /** Clases de los grupos que dicto o a los que asisto (agenda personal, también pastores). */
   async listInRange(me: AuthenticatedUser, from: Date, to: Date): Promise<GroupSessionModel[]> {
-    const membership = me.isPastor
-      ? {}
-      : {
-          group: {
-            OR: [{ leaderId: me.sub }, { memberships: { some: { userId: me.sub, leftAt: null } } }],
-          },
-        };
     const rows = await this.prisma.groupSession.findMany({
       where: {
-        ...membership,
+        group: {
+          OR: [{ leaderId: me.sub }, { memberships: { some: { userId: me.sub, leftAt: null } } }],
+        },
         OR: [{ startsAt: { gte: from, lte: to } }, { scheduledFor: { gte: from, lte: to } }],
       },
       include: SESSION_INCLUDE,

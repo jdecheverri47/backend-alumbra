@@ -52,21 +52,19 @@ export class EventsService {
   }
 
   /**
-   * Events visible to the user within [from, to]: general events plus events
-   * of groups the user leads or belongs to. Pastors see everything.
+   * El calendario es agenda personal: eventos generales más los de grupos que
+   * el usuario dicta o a los que asiste (también para pastores).
    */
   async listVisible(me: AuthenticatedUser, from: Date, to: Date): Promise<EventRow[]> {
-    const visibility = me.isPastor
-      ? {}
-      : {
-          OR: [
-            { groupId: null },
-            { group: { leaderId: me.sub } },
-            { group: { memberships: { some: { userId: me.sub, leftAt: null } } } },
-          ],
-        };
     return this.prisma.event.findMany({
-      where: { startsAt: { gte: from, lte: to }, ...visibility },
+      where: {
+        startsAt: { gte: from, lte: to },
+        OR: [
+          { groupId: null },
+          { group: { leaderId: me.sub } },
+          { group: { memberships: { some: { userId: me.sub, leftAt: null } } } },
+        ],
+      },
       include: EVENT_INCLUDE,
       orderBy: { startsAt: 'asc' },
     });

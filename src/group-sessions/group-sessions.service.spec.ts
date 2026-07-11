@@ -130,14 +130,16 @@ describe('GroupSessionsService', () => {
       expect(revived.status).toBe('REPROGRAMADA');
     });
 
-    it('listInRange solo trae clases de mis grupos (pastor ve todas)', async () => {
+    it('listInRange es agenda personal: solo clases de grupos que dicto o asisto (pastor incluido)', async () => {
       await service.create(asAuth(lider), { groupId, scheduledFor: nextThursday });
       const from = new Date('2026-07-01');
       const to = new Date('2026-07-31');
 
       expect(await service.listInRange(asAuth(miembro), from, to)).toHaveLength(1);
+      expect(await service.listInRange(asAuth(lider), from, to)).toHaveLength(1);
       expect(await service.listInRange(asAuth(externo), from, to)).toHaveLength(0);
-      expect(await service.listInRange(asAuth(pastor), from, to)).toHaveLength(1);
+      // El pastor no dicta ni asiste a este grupo: su agenda no lo incluye.
+      expect(await service.listInRange(asAuth(pastor), from, to)).toHaveLength(0);
     });
   });
 
