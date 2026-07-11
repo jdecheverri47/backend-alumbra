@@ -70,10 +70,19 @@ export class GroupsResolver {
     return toGroupModel(await this.groupsService.updateById(me, id, input));
   }
 
+  // Líder del grupo o pastor (validado en el service).
+  @Mutation(() => GroupModel, { description: 'Cierra el grupo una vez completado.' })
+  async archiveGroup(
+    @Args('id', { type: () => ID }) id: string,
+    @CurrentUser() me: AuthenticatedUser,
+  ): Promise<GroupModel> {
+    return toGroupModel(await this.groupsService.archive(me, id));
+  }
+
   @RequirePastor()
-  @Mutation(() => GroupModel)
-  async archiveGroup(@Args('id', { type: () => ID }) id: string): Promise<GroupModel> {
-    return toGroupModel(await this.groupsService.archive(id));
+  @Mutation(() => GroupModel, { description: 'Reabre un grupo cerrado.' })
+  async reopenGroup(@Args('id', { type: () => ID }) id: string): Promise<GroupModel> {
+    return toGroupModel(await this.groupsService.reopen(id));
   }
 
   // Pastor o líder del grupo (validado en el service).

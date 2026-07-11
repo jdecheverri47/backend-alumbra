@@ -373,6 +373,8 @@ type Mutation {
   addSessionMaterial(input: AddSessionMaterialInput!): SessionMaterial!
   addUserToGroup(input: AddUserToGroupInput!): GroupMembership!
   addUserToMinistry(input: AddUserToMinistryInput!): MinistryMembership!
+
+  """Cierra el grupo una vez completado."""
   archiveGroup(id: ID!): Group!
   archiveMinistry(id: ID!): Ministry!
 
@@ -422,6 +424,9 @@ type Mutation {
   removeSessionMaterial(id: ID!): Boolean!
   removeUserFromGroup(membershipId: ID!): GroupMembership!
   removeUserFromMinistry(membershipId: ID!): MinistryMembership!
+
+  """Reabre un grupo cerrado."""
+  reopenGroup(id: ID!): Group!
 
   """Reprogramar (reactiva si estaba cancelada)."""
   rescheduleGroupSession(id: ID!, note: String, startsAt: DateTime!): GroupSession!

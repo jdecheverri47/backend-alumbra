@@ -74,11 +74,23 @@ export class GroupsService {
     return this.prisma.group.update({ where: { id }, data, include: GROUP_INCLUDE });
   }
 
-  async archive(id: string): Promise<GroupWithLeader> {
-    await this.findByIdOrThrow(id);
+  /** Cierra el grupo (completado). Lo puede hacer su líder o un pastor. */
+  async archive(me: AuthenticatedUser, id: string): Promise<GroupWithLeader> {
+    const group = await this.findByIdOrThrow(id);
+    this.assertLeaderOrPastor(me, group);
     return this.prisma.group.update({
       where: { id },
       data: { archivedAt: new Date() },
+      include: GROUP_INCLUDE,
+    });
+  }
+
+  /** Reabre un grupo cerrado (solo pastores, guard en el resolver). */
+  async reopen(id: string): Promise<GroupWithLeader> {
+    await this.findByIdOrThrow(id);
+    return this.prisma.group.update({
+      where: { id },
+      data: { archivedAt: null },
       include: GROUP_INCLUDE,
     });
   }

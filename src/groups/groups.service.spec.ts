@@ -148,6 +148,27 @@ describe('GroupsService', () => {
     expect(await service.myGroups(miembro.id)).toHaveLength(0);
   });
 
+  it('cerrar grupo: el líder o un pastor lo cierran; un miembro no; el pastor reabre', async () => {
+    const conexion = await service.create(asAuth(pastor), {
+      type: 'CONEXION',
+      name: 'Conexión 1',
+      leaderId: miembro.id,
+    });
+
+    await expect(service.archive(asAuth(asistente), conexion.id)).rejects.toThrow(/líder|pastor/i);
+
+    const closed = await service.archive(asAuth(miembro), conexion.id);
+    expect(closed.archivedAt).not.toBeNull();
+    // Cerrado: sale de myGroups y no acepta nuevos integrantes.
+    expect(await service.myGroups(miembro.id)).toHaveLength(0);
+    await expect(
+      service.addMember(asAuth(miembro), { userId: asistente.id, groupId: conexion.id }),
+    ).rejects.toThrow(/archivado/i);
+
+    const reopened = await service.reopen(conexion.id);
+    expect(reopened.archivedAt).toBeNull();
+  });
+
   it('findForViewer denies outsiders and allows members, leader and pastors', async () => {
     const madurez = await service.create(asAuth(pastor), { type: 'MADUREZ', name: 'Madurez 1' });
     await service.addMember(asAuth(pastor), { userId: miembro.id, groupId: madurez.id });
