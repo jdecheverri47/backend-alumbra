@@ -73,6 +73,35 @@ export class CourseModel {
   topics!: CourseTopicModel[];
 }
 
+@ObjectType('CourseEnrollment', {
+  description: 'Inscripción abierta a un curso, pendiente de que lo muevan a una cohorte.',
+})
+export class CourseEnrollmentModel {
+  @Field(() => ID)
+  id!: string;
+
+  @Field(() => UserModel)
+  user!: UserModel;
+
+  @Field()
+  courseSlug!: string;
+
+  @Field()
+  courseName!: string;
+
+  @Field(() => Date)
+  createdAt!: Date;
+
+  @Field(() => String, { nullable: true, description: 'Cohorte a la que fue movido.' })
+  placedGroupId?: string | null;
+
+  @Field(() => String, { nullable: true })
+  placedGroupName?: string | null;
+
+  @Field(() => Date, { nullable: true })
+  placedAt?: Date | null;
+}
+
 @ObjectType('CourseCompletion')
 export class CourseCompletionModel {
   @Field(() => ID)

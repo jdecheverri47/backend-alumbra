@@ -1,9 +1,16 @@
-import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
-import { Course, CourseCompletion, User } from '@prisma/client';
+import {
+  BadRequestException,
+  ConflictException,
+  ForbiddenException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
+import { Course, CourseCompletion, CourseEnrollment, Group, Prisma, User } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuthenticatedUser } from '../auth/types/authenticated-user';
+import { GroupsService } from '../groups/groups.service';
 import { toUserModel } from '../users/dto/to-user-model';
-import { CourseCompletionModel, CourseModel } from './dto/course.models';
+import { CourseCompletionModel, CourseEnrollmentModel, CourseModel } from './dto/course.models';
 
 export const EVANGELIO_SLUG = 'evangelio';
 export const RUTA_SLUG = 'ruta-crecimiento';
@@ -23,7 +30,116 @@ const COURSE_INCLUDE = {
 
 @Injectable()
 export class CoursesService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly groupsService: GroupsService,
+  ) {}
+
+  // ── Inscripciones abiertas (Evangelio) ─────────────────────────────────────
+
+  /** Auto-inscripción al curso de Evangelio (abierto; solo no miembros). */
+  async enroll(me: AuthenticatedUser, courseId: string): Promise<CourseEnrollmentModel> {
+    const course = await this.prisma.course.findUnique({ where: { id: courseId } });
+    if (!course) throw new NotFoundException(`Course ${courseId} not found.`);
+    if (course.slug !== EVANGELIO_SLUG) {
+      throw new BadRequestException('Solo el curso de Evangelio tiene inscripción abierta.');
+    }
+    if (me.baseRole === 'MIEMBRO') {
+      throw new BadRequestException('El curso de Evangelio es para no miembros.');
+    }
+
+    try {
+      const row = await this.prisma.courseEnrollment.create({
+        data: { userId: me.sub, courseId },
+        include: { user: true, course: true, placedGroup: true },
+      });
+      return this.toEnrollmentModel(row);
+    } catch (e) {
+      if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2002') {
+        throw new ConflictException('Ya estás inscrito en este curso.');
+      }
+      throw e;
+    }
+  }
+
+  async myEnrollments(me: AuthenticatedUser): Promise<CourseEnrollmentModel[]> {
+    const rows = await this.prisma.courseEnrollment.findMany({
+      where: { userId: me.sub },
+      include: { user: true, course: true, placedGroup: true },
+      orderBy: { createdAt: 'desc' },
+    });
+    return rows.map((row) => this.toEnrollmentModel(row));
+  }
+
+  /** Inscritos pendientes de cohorte. Pastores o líderes de cohortes del curso. */
+  async pendingEnrollments(
+    me: AuthenticatedUser,
+    courseId: string,
+  ): Promise<CourseEnrollmentModel[]> {
+    if (!me.isPastor) {
+      const ledCohort = await this.prisma.group.findFirst({
+        where: { courseId, leaderId: me.sub, archivedAt: null },
+      });
+      if (!ledCohort) {
+        throw new ForbiddenException({
+          error: 'FORBIDDEN',
+          message: 'Solo pastores o líderes de cohortes del curso ven los inscritos.',
+        });
+      }
+    }
+    const rows = await this.prisma.courseEnrollment.findMany({
+      where: { courseId, placedAt: null },
+      include: { user: true, course: true, placedGroup: true },
+      orderBy: { createdAt: 'asc' },
+    });
+    return rows.map((row) => this.toEnrollmentModel(row));
+  }
+
+  /** Mueve al inscrito a una cohorte (pastor, o líder de la cohorte destino). */
+  async placeEnrollment(
+    me: AuthenticatedUser,
+    enrollmentId: string,
+    groupId: string,
+  ): Promise<CourseEnrollmentModel> {
+    const enrollment = await this.prisma.courseEnrollment.findUnique({
+      where: { id: enrollmentId },
+      include: { course: true },
+    });
+    if (!enrollment) throw new NotFoundException(`Enrollment ${enrollmentId} not found.`);
+    if (enrollment.placedAt) {
+      throw new ConflictException('Esta inscripción ya fue asignada a una cohorte.');
+    }
+
+    const group = await this.prisma.group.findUnique({ where: { id: groupId } });
+    if (!group || group.courseId !== enrollment.courseId || group.archivedAt) {
+      throw new BadRequestException('La cohorte destino debe ser una cohorte activa del curso.');
+    }
+
+    // addMember valida permisos (pastor o líder de la cohorte) y las reglas del curso.
+    await this.groupsService.addMember(me, { userId: enrollment.userId, groupId });
+
+    const row = await this.prisma.courseEnrollment.update({
+      where: { id: enrollmentId },
+      data: { placedGroupId: groupId, placedAt: new Date(), placedById: me.sub },
+      include: { user: true, course: true, placedGroup: true },
+    });
+    return this.toEnrollmentModel(row);
+  }
+
+  private toEnrollmentModel(
+    row: CourseEnrollment & { user: User; course: Course; placedGroup: Group | null },
+  ): CourseEnrollmentModel {
+    return {
+      id: row.id,
+      user: toUserModel(row.user),
+      courseSlug: row.course.slug,
+      courseName: row.course.name,
+      createdAt: row.createdAt,
+      placedGroupId: row.placedGroupId,
+      placedGroupName: row.placedGroup?.name ?? null,
+      placedAt: row.placedAt,
+    };
+  }
 
   async list(): Promise<CourseModel[]> {
     const rows = await this.prisma.course.findMany({

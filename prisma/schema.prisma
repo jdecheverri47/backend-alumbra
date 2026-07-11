@@ -93,6 +93,8 @@ model User {
   recordedAttendances SessionAttendance[]    @relation("AttendanceRecorder")
   courseCompletions   CourseCompletion[]     @relation("CompletionUser")
   certifiedCompletions CourseCompletion[]    @relation("CompletionCertifier")
+  courseEnrollments   CourseEnrollment[]     @relation("EnrollmentUser")
+  placedEnrollments   CourseEnrollment[]     @relation("EnrollmentPlacer")
   membershipJourney   MembershipJourney?     @relation("JourneyUser")
   interviewedJourneys MembershipJourney[]    @relation("JourneyInterviewer")
   assignedJourneys    MembershipJourney[]    @relation("JourneyAssignedLeader")
@@ -169,6 +171,7 @@ model Group {
   events      Event[]
   sessions    GroupSession[]
   journeys    MembershipJourney[] @relation("JourneyRutaGroup")
+  placements  CourseEnrollment[]
 
   createdAt  DateTime  @default(now())
   updatedAt  DateTime  @updatedAt
@@ -290,6 +293,7 @@ model Course {
   topics      CourseTopic[]
   groups      Group[]
   completions CourseCompletion[]
+  enrollments CourseEnrollment[]
 
   createdAt DateTime @default(now())
 }
@@ -331,6 +335,26 @@ model CourseLessonTask {
   lesson CourseLesson @relation(fields: [lessonId], references: [id])
 
   @@unique([lessonId, order])
+}
+
+// Inscripción abierta a un curso (Evangelio); luego un pastor/líder lo mueve a una cohorte.
+model CourseEnrollment {
+  id        String   @id @default(cuid())
+  userId    String
+  courseId  String
+  createdAt DateTime @default(now())
+
+  placedGroupId String?
+  placedAt      DateTime?
+  placedById    String?
+
+  user        User   @relation("EnrollmentUser", fields: [userId], references: [id])
+  course      Course @relation(fields: [courseId], references: [id])
+  placedGroup Group? @relation(fields: [placedGroupId], references: [id])
+  placedBy    User?  @relation("EnrollmentPlacer", fields: [placedById], references: [id])
+
+  @@unique([userId, courseId])
+  @@index([courseId, placedAt])
 }
 
 model CourseCompletion {

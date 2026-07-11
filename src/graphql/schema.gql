@@ -69,6 +69,22 @@ type CourseCompletion {
   id: ID!
 }
 
+"""
+Inscripción abierta a un curso, pendiente de que lo muevan a una cohorte.
+"""
+type CourseEnrollment {
+  courseName: String!
+  courseSlug: String!
+  createdAt: DateTime!
+  id: ID!
+  placedAt: DateTime
+
+  """Cohorte a la que fue movido."""
+  placedGroupId: String
+  placedGroupName: String
+  user: User!
+}
+
 type CourseLesson {
   description: String
   id: ID!
@@ -391,8 +407,14 @@ type Mutation {
   deletePost(id: ID!): Post!
   deletePostComment(id: ID!): PostComment!
 
+  """Auto-inscripción al curso de Evangelio (solo no miembros)."""
+  enrollInCourse(courseId: ID!): CourseEnrollment!
+
   """Abre el filtro de iglesia y publica el anuncio."""
   openChurchFilter(id: ID!): MembershipJourney!
+
+  """Mueve al inscrito a una cohorte con líder."""
+  placeCourseEnrollment(enrollmentId: ID!, groupId: ID!): CourseEnrollment!
 
   """Crea o reemplaza mi reacción al post."""
   reactToPost(postId: ID!, type: ReactionType!): Post!
@@ -539,6 +561,9 @@ type Query {
 
   """Candidatos asignados a mí como líder de ruta, pendientes de cohorte."""
   myAssignedCandidates: [MembershipJourney!]!
+
+  """Mis inscripciones a cursos."""
+  myCourseEnrollments: [CourseEnrollment!]!
   myFeedPermissions: FeedPermissions!
 
   """Grupos donde soy miembro activo o líder."""
@@ -549,6 +574,9 @@ type Query {
 
   """Mi proceso de membresía."""
   myJourney: MembershipJourney
+
+  """Inscritos pendientes de cohorte de un curso."""
+  pendingCourseEnrollments(courseId: ID!): [CourseEnrollment!]!
 
   """Anuncios fijados, para mostrar arriba del feed."""
   pinnedAnnouncements: [Post!]!

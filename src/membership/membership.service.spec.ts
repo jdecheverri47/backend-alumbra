@@ -455,6 +455,56 @@ describe('Membership pipeline (integration)', () => {
     expect(asLeader[0].group.name).toBe('Ruta 2026-2');
   });
 
+  it('inscripción abierta a Evangelio: cualquiera se inscribe y luego lo mueven a una cohorte', async () => {
+    // El asistente se inscribe solo; un miembro no puede; doble inscripción tampoco.
+    const enrollment = await courses.enroll(asAuth(candidato), evangelioCourseId);
+    expect(enrollment.placedAt).toBeNull();
+    await expect(courses.enroll(asAuth(miembro), evangelioCourseId)).rejects.toThrow(
+      /no miembros/i,
+    );
+    await expect(courses.enroll(asAuth(candidato), evangelioCourseId)).rejects.toThrow(
+      /ya estás inscrito/i,
+    );
+    // La Ruta no tiene inscripción abierta.
+    await expect(courses.enroll(asAuth(candidato), rutaCourseId)).rejects.toThrow(
+      /inscripción abierta/i,
+    );
+
+    // Cohorte de Evangelio liderada por un líder asignado.
+    await prisma.user.update({ where: { id: miembro.id }, data: { isLeader: true } });
+    const liderUser = await prisma.user.findUniqueOrThrow({ where: { id: miembro.id } });
+    const cohorte = await groups.create(asAuth(pastor), {
+      type: 'CURSO',
+      name: 'Evangelio 2026-1',
+      courseId: evangelioCourseId,
+      leaderId: miembro.id,
+    });
+
+    // El líder ve al inscrito pendiente; un miembro raso no.
+    const pendientes = await courses.pendingEnrollments(asAuth(liderUser), evangelioCourseId);
+    expect(pendientes.map((e) => e.id)).toEqual([enrollment.id]);
+    const raso = await prisma.user.create({
+      data: { email: 'raso@x.com', firstName: 'R', lastName: 'S', baseRole: 'MIEMBRO' },
+    });
+    await expect(courses.pendingEnrollments(asAuth(raso), evangelioCourseId)).rejects.toThrow(
+      /pastores|líderes/i,
+    );
+
+    // Lo mueve a su cohorte: queda en el grupo y sale de pendientes.
+    const placed = await courses.placeEnrollment(asAuth(liderUser), enrollment.id, cohorte.id);
+    expect(placed.placedGroupName).toBe('Evangelio 2026-1');
+    const membershipRow = await prisma.groupMembership.findFirst({
+      where: { groupId: cohorte.id, userId: candidato.id, leftAt: null },
+    });
+    expect(membershipRow).not.toBeNull();
+    expect(await courses.pendingEnrollments(asAuth(liderUser), evangelioCourseId)).toHaveLength(0);
+
+    // No se puede colocar dos veces.
+    await expect(
+      courses.placeEnrollment(asAuth(pastor), enrollment.id, cohorte.id),
+    ).rejects.toThrow(/ya fue asignada/i);
+  });
+
   it('las cohortes de Evangelio solo aceptan no miembros (asistentes)', async () => {
     const cohorteEvangelio = await groups.create(asAuth(pastor), {
       type: 'CURSO',
