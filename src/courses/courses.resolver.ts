@@ -13,11 +13,14 @@ export class CoursesResolver {
     return this.coursesService.list();
   }
 
-  @Query(() => [CourseCompletionModel], { description: 'Cursos certificados de una persona.' })
+  @Query(() => [CourseCompletionModel], {
+    description: 'Cursos certificados de una persona (la propia persona, líderes y pastores).',
+  })
   async courseCompletions(
     @Args('userId', { type: () => ID }) userId: string,
+    @CurrentUser() me: AuthenticatedUser,
   ): Promise<CourseCompletionModel[]> {
-    return this.coursesService.completionsFor(userId);
+    return this.coursesService.completionsFor(me, userId);
   }
 
   // Líder de una cohorte del curso o pastor (validado en el service).

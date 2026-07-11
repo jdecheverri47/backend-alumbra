@@ -61,17 +61,22 @@ export class MembershipService {
     return Promise.all(rows.map((row) => this.withProgress(row, { includeInternal: true })));
   }
 
+  /**
+   * Expediente de una persona. Solo líderes y pastores (y la propia persona);
+   * las notas internas quedan restringidas a pastores y al entrevistador asignado.
+   */
   async journeyOf(me: AuthenticatedUser, userId: string): Promise<MembershipJourneyModel | null> {
     const row = await this.prisma.membershipJourney.findUnique({
       where: { userId },
       include: JOURNEY_INCLUDE,
     });
     if (!row) return null;
-    const privileged = me.isPastor || row.interviewerId === me.sub;
-    if (!privileged && row.userId !== me.sub) {
+    const internal = me.isPastor || row.interviewerId === me.sub;
+    const mayView = internal || me.user.isLeader || row.userId === me.sub;
+    if (!mayView) {
       throw new ForbiddenException({ error: 'FORBIDDEN', message: 'No autorizado.' });
     }
-    return this.withProgress(row, { includeInternal: privileged });
+    return this.withProgress(row, { includeInternal: internal });
   }
 
   /** Filtro abierto de un candidato, para el formulario de observaciones de los miembros. */
@@ -133,6 +138,15 @@ export class MembershipService {
     if (!user) throw new NotFoundException(`User ${data.userId} not found.`);
     if (user.baseRole === 'MIEMBRO') {
       throw new BadRequestException('Esta persona ya es miembro.');
+    }
+
+    // El expediente lo manejan líderes y pastores: el entrevistador debe serlo.
+    if (data.interviewerId && data.interviewerId !== me.sub) {
+      const interviewer = await this.prisma.user.findFirst({ where: { id: data.interviewerId } });
+      if (!interviewer) throw new NotFoundException(`User ${data.interviewerId} not found.`);
+      if (!interviewer.isPastor && !interviewer.isLeader) {
+        throw new BadRequestException('El entrevistador debe ser un líder o un pastor.');
+      }
     }
 
     try {

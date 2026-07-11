@@ -486,7 +486,9 @@ type Query {
   """Filtro de iglesia abierto para un candidato (para miembros)."""
   churchFilterFor(userId: ID!): ChurchFilterInfo
 
-  """Cursos certificados de una persona."""
+  """
+  Cursos certificados de una persona (la propia persona, líderes y pastores).
+  """
   courseCompletions(userId: ID!): [CourseCompletion!]!
 
   """Cursos con su currículo (temas → clases → tareas)."""

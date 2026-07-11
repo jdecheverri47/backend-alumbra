@@ -298,6 +298,37 @@ describe('Membership pipeline (integration)', () => {
     expect(mine?.rutaProgress?.sessionsAttended).toBe(1);
   });
 
+  it('el expediente lo ven líderes y pastores (y el propio candidato); otros miembros no', async () => {
+    const externo = await prisma.user.create({
+      data: { email: 'externo@x.com', firstName: 'X', lastName: 'Cinco', baseRole: 'ASISTENTE' },
+    });
+    await membership.start(asAuth(pastor), { userId: candidato.id });
+
+    // Un miembro cualquiera no puede ver el expediente.
+    await expect(membership.journeyOf(asAuth(miembro), candidato.id)).rejects.toThrow(
+      /autorizado/i,
+    );
+
+    // Con rol de líder sí (sin notas internas); el candidato ve el suyo.
+    await prisma.user.update({ where: { id: miembro.id }, data: { isLeader: true } });
+    const leaderUser = await prisma.user.findUniqueOrThrow({ where: { id: miembro.id } });
+    const asLeader = await membership.journeyOf(asAuth(leaderUser), candidato.id);
+    expect(asLeader?.stage).toBe('PRE_ENTREVISTA');
+    const own = await membership.journeyOf(asAuth(candidato), candidato.id);
+    expect(own?.stage).toBe('PRE_ENTREVISTA');
+
+    // Las certificaciones de cursos también son parte del expediente.
+    await courses.certifyCompletion(asAuth(pastor), candidato.id, evangelioCourseId);
+    expect(await courses.completionsFor(asAuth(externo), candidato.id)).toHaveLength(0);
+    expect(await courses.completionsFor(asAuth(leaderUser), candidato.id)).toHaveLength(1);
+    expect(await courses.completionsFor(asAuth(candidato), candidato.id)).toHaveLength(1);
+
+    // El entrevistador asignado debe ser líder o pastor.
+    await expect(
+      membership.start(asAuth(pastor), { userId: externo.id, interviewerId: externo.id }),
+    ).rejects.toThrow(/líder|pastor/i);
+  });
+
   it('las cohortes de la Ruta las dirige un líder asignado o un pastor', async () => {
     // Un miembro sin rol de líder no puede dirigir la Ruta.
     await expect(

@@ -39,7 +39,9 @@ export class CoursesService {
     return course;
   }
 
-  async completionsFor(userId: string): Promise<CourseCompletionModel[]> {
+  /** Parte del expediente formativo: visible solo para la propia persona, líderes y pastores. */
+  async completionsFor(me: AuthenticatedUser, userId: string): Promise<CourseCompletionModel[]> {
+    if (userId !== me.sub && !me.isPastor && !me.user.isLeader) return [];
     const rows = await this.prisma.courseCompletion.findMany({
       where: { userId },
       include: { course: { include: COURSE_INCLUDE }, certifiedBy: true },

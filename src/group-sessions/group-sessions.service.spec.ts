@@ -100,9 +100,7 @@ describe('GroupSessionsService', () => {
         groupId,
         scheduledFor: nextThursday,
       });
-      await expect(service.complete(asAuth(miembro), session.id)).rejects.toThrow(
-        /líder|pastor/i,
-      );
+      await expect(service.complete(asAuth(miembro), session.id)).rejects.toThrow(/líder|pastor/i);
       const done = await service.complete(asAuth(lider), session.id);
       expect(done.status).toBe('COMPLETADA');
 
