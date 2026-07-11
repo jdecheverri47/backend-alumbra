@@ -135,7 +135,9 @@ export class MembershipResolver {
   }
 
   // Entrevistador o pastor (validado en el service).
-  @Mutation(() => MembershipJourneyModel, { description: 'Aplaza al candidato a una próxima ruta.' })
+  @Mutation(() => MembershipJourneyModel, {
+    description: 'Aplaza al candidato a una próxima ruta.',
+  })
   async deferJourney(
     @Args('id', { type: () => ID }) id: string,
     @CurrentUser() me: AuthenticatedUser,

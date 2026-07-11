@@ -11,6 +11,7 @@ import { AuthenticatedUser } from '../auth/types/authenticated-user';
 import { addUserToGroupSchema, createGroupSchema, updateGroupSchema } from './dto/inputs.schema';
 
 const RUTA_SLUG = 'ruta-crecimiento';
+const EVANGELIO_SLUG = 'evangelio';
 const GROUP_INCLUDE = { leader: true, course: true };
 
 type GroupWithLeader = Group & { leader: User; course: Course | null };
@@ -192,6 +193,12 @@ export class GroupsService {
     if (group.type === 'CONEXION' && user.baseRole !== 'ASISTENTE') {
       throw new BadRequestException(
         'Los grupos de conexión son para asistentes; los miembros pertenecen a grupos de madurez.',
+      );
+    }
+    // Evangelio funciona como un grupo de conexión más: solo para no miembros.
+    if (group.course?.slug === EVANGELIO_SLUG && user.baseRole === 'MIEMBRO') {
+      throw new BadRequestException(
+        'El curso de Evangelio es para no miembros; los miembros ya lo recorrieron.',
       );
     }
     // A la Ruta solo se entra validado por el entrevistador (vía assignJourneyToRuta o aquí).

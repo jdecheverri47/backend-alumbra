@@ -392,9 +392,9 @@ describe('Membership pipeline (integration)', () => {
     const sinRol = await prisma.user.create({
       data: { email: 'sinrol@x.com', firstName: 'S', lastName: 'R', baseRole: 'MIEMBRO' },
     });
-    await expect(
-      membership.assignToLeader(asAuth(pastor), journey.id, sinRol.id),
-    ).rejects.toThrow(/líder|pastor/i);
+    await expect(membership.assignToLeader(asAuth(pastor), journey.id, sinRol.id)).rejects.toThrow(
+      /líder|pastor/i,
+    );
 
     // Asignado al líder: le aparece en su lista y aún no tiene cohorte.
     const assigned = await membership.assignToLeader(asAuth(pastor), journey.id, miembro.id);
@@ -453,6 +453,25 @@ describe('Membership pipeline (integration)', () => {
     const asLeader = await groups.rutaCohortOverviews(asAuth(liderUser));
     expect(asLeader).toHaveLength(1);
     expect(asLeader[0].group.name).toBe('Ruta 2026-2');
+  });
+
+  it('las cohortes de Evangelio solo aceptan no miembros (asistentes)', async () => {
+    const cohorteEvangelio = await groups.create(asAuth(pastor), {
+      type: 'CURSO',
+      name: 'Evangelio 2026-1',
+      courseId: evangelioCourseId,
+    });
+
+    // Asistente entra sin problema.
+    await groups.addMember(asAuth(pastor), {
+      userId: candidato.id,
+      groupId: cohorteEvangelio.id,
+    });
+
+    // Un miembro no.
+    await expect(
+      groups.addMember(asAuth(pastor), { userId: miembro.id, groupId: cohorteEvangelio.id }),
+    ).rejects.toThrow(/no miembros/i);
   });
 
   it('certifyCourseCompletion exige liderar cohorte del curso o ser pastor', async () => {
