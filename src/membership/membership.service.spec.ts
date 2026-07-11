@@ -456,12 +456,10 @@ describe('Membership pipeline (integration)', () => {
   });
 
   it('inscripción abierta a Evangelio: cualquiera se inscribe y luego lo mueven a una cohorte', async () => {
-    // El asistente se inscribe solo; un miembro no puede; doble inscripción tampoco.
+    // Cualquiera se inscribe solo (asistentes y miembros); doble inscripción no.
     const enrollment = await courses.enroll(asAuth(candidato), evangelioCourseId);
     expect(enrollment.placedAt).toBeNull();
-    await expect(courses.enroll(asAuth(miembro), evangelioCourseId)).rejects.toThrow(
-      /no miembros/i,
-    );
+    await expect(courses.enroll(asAuth(miembro), evangelioCourseId)).resolves.toBeTruthy();
     await expect(courses.enroll(asAuth(candidato), evangelioCourseId)).rejects.toThrow(
       /ya estás inscrito/i,
     );
@@ -480,9 +478,10 @@ describe('Membership pipeline (integration)', () => {
       leaderId: miembro.id,
     });
 
-    // El líder ve al inscrito pendiente; un miembro raso no.
+    // El líder ve a los inscritos pendientes (asistente y miembro); un miembro raso no.
     const pendientes = await courses.pendingEnrollments(asAuth(liderUser), evangelioCourseId);
-    expect(pendientes.map((e) => e.id)).toEqual([enrollment.id]);
+    expect(pendientes).toHaveLength(2);
+    expect(pendientes.map((e) => e.id)).toContain(enrollment.id);
     const raso = await prisma.user.create({
       data: { email: 'raso@x.com', firstName: 'R', lastName: 'S', baseRole: 'MIEMBRO' },
     });
@@ -497,7 +496,10 @@ describe('Membership pipeline (integration)', () => {
       where: { groupId: cohorte.id, userId: candidato.id, leftAt: null },
     });
     expect(membershipRow).not.toBeNull();
-    expect(await courses.pendingEnrollments(asAuth(liderUser), evangelioCourseId)).toHaveLength(0);
+    // Solo queda pendiente la inscripción del miembro.
+    const restantes = await courses.pendingEnrollments(asAuth(liderUser), evangelioCourseId);
+    expect(restantes.map((e) => e.id)).not.toContain(enrollment.id);
+    expect(restantes).toHaveLength(1);
 
     // No se puede colocar dos veces.
     await expect(
@@ -505,23 +507,23 @@ describe('Membership pipeline (integration)', () => {
     ).rejects.toThrow(/ya fue asignada/i);
   });
 
-  it('las cohortes de Evangelio solo aceptan no miembros (asistentes)', async () => {
+  it('las cohortes de Evangelio aceptan asistentes y miembros por igual', async () => {
     const cohorteEvangelio = await groups.create(asAuth(pastor), {
       type: 'CURSO',
       name: 'Evangelio 2026-1',
       courseId: evangelioCourseId,
     });
 
-    // Asistente entra sin problema.
     await groups.addMember(asAuth(pastor), {
       userId: candidato.id,
       groupId: cohorteEvangelio.id,
     });
-
-    // Un miembro no.
-    await expect(
-      groups.addMember(asAuth(pastor), { userId: miembro.id, groupId: cohorteEvangelio.id }),
-    ).rejects.toThrow(/no miembros/i);
+    await groups.addMember(asAuth(pastor), {
+      userId: miembro.id,
+      groupId: cohorteEvangelio.id,
+    });
+    const members = await groups.listMembers(cohorteEvangelio.id);
+    expect(members).toHaveLength(2);
   });
 
   it('certifyCourseCompletion exige liderar cohorte del curso o ser pastor', async () => {

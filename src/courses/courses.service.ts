@@ -44,9 +44,6 @@ export class CoursesService {
     if (course.slug !== EVANGELIO_SLUG) {
       throw new BadRequestException('Solo el curso de Evangelio tiene inscripción abierta.');
     }
-    if (me.baseRole === 'MIEMBRO') {
-      throw new BadRequestException('El curso de Evangelio es para no miembros.');
-    }
 
     try {
       const row = await this.prisma.courseEnrollment.create({
