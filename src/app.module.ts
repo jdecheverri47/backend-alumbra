@@ -1,17 +1,58 @@
+import { unwrapResolverError } from '@apollo/server/errors';
 import { ApolloDriver, ApolloDriverConfig } from '@nestjs/apollo';
-import { Module } from '@nestjs/common';
+import { HttpException, MiddlewareConsumer, Module, NestModule } from '@nestjs/common';
 import { GraphQLModule } from '@nestjs/graphql';
+import { ThrottlerModule } from '@nestjs/throttler';
+import cookieParser from 'cookie-parser';
+import { Request, Response } from 'express';
+import { GraphQLFormattedError } from 'graphql';
 import { join } from 'path';
+import { AuthModule } from './auth/auth.module';
 import { ConfigModule } from './config/config.module';
+import { CoursesModule } from './courses/courses.module';
+import { EventsModule } from './events/events.module';
+import { FeedModule } from './feed/feed.module';
+import { GroupSessionsModule } from './group-sessions/group-sessions.module';
+import { GroupsModule } from './groups/groups.module';
+import { MembershipModule } from './membership/membership.module';
 import { MinistriesModule } from './ministries/ministries.module';
 import { PrismaModule } from './prisma/prisma.module';
+import { UploadsModule } from './uploads/uploads.module';
 import { UsersModule } from './users/users.module';
 import { AppResolver } from './app.resolver';
+
+const HTTP_STATUS_TO_GRAPHQL_CODE: Record<number, string> = {
+  400: 'BAD_REQUEST',
+  401: 'UNAUTHENTICATED',
+  403: 'FORBIDDEN',
+  404: 'NOT_FOUND',
+  409: 'CONFLICT',
+};
+
+/** Maps Nest HttpExceptions thrown in guards/resolvers to standard GraphQL error codes. */
+function formatGraphQLError(
+  formattedError: GraphQLFormattedError,
+  error: unknown,
+): GraphQLFormattedError {
+  const original = unwrapResolverError(error);
+  if (original instanceof HttpException) {
+    const code = HTTP_STATUS_TO_GRAPHQL_CODE[original.getStatus()];
+    if (code) {
+      return { ...formattedError, extensions: { ...formattedError.extensions, code } };
+    }
+  }
+  return formattedError;
+}
 
 @Module({
   imports: [
     ConfigModule,
     PrismaModule,
+    ThrottlerModule.forRoot({
+      // Applied selectively via @UseGuards(ThrottlerGuard) on the auth endpoints.
+      throttlers: [{ ttl: 15 * 60 * 1000, limit: 100 }],
+      skipIf: () => process.env.NODE_ENV === 'test',
+    }),
     GraphQLModule.forRootAsync<ApolloDriverConfig>({
       driver: ApolloDriver,
       useFactory: () => ({
@@ -20,11 +61,26 @@ import { AppResolver } from './app.resolver';
         playground: false,
         introspection: process.env.NODE_ENV !== 'production',
         path: '/graphql',
+        context: ({ req, res }: { req: Request; res: Response }) => ({ req, res }),
+        formatError: formatGraphQLError,
       }),
     }),
+    AuthModule,
     UsersModule,
     MinistriesModule,
+    GroupsModule,
+    GroupSessionsModule,
+    CoursesModule,
+    MembershipModule,
+    EventsModule,
+    FeedModule,
+    UploadsModule,
   ],
   providers: [AppResolver],
 })
-export class AppModule {}
+export class AppModule implements NestModule {
+  configure(consumer: MiddlewareConsumer): void {
+    // Registered here (not in main.ts) so e2e tests get cookie parsing too.
+    consumer.apply(cookieParser()).forRoutes('*');
+  }
+}

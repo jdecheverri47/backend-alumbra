@@ -89,4 +89,17 @@ describe('UsersService', () => {
     expect(result.edges).toHaveLength(1);
     expect(result.edges[0].node.email).toBe('ana@x.com');
   });
+  it('setLeader: solo miembros (o pastores) reciben el rol; se puede revocar', async () => {
+    const asistente = await service.create({ email: 'a@x.com', firstName: 'A', lastName: 'S' });
+    await expect(service.setLeader(asistente.id, true)).rejects.toThrow(/miembros/i);
+
+    const miembro = await service.create({ email: 'm@x.com', firstName: 'M', lastName: 'B' });
+    await service.updateById(miembro.id, {});
+    await prisma.user.update({ where: { id: miembro.id }, data: { baseRole: 'MIEMBRO' } });
+
+    const granted = await service.setLeader(miembro.id, true);
+    expect(granted.isLeader).toBe(true);
+    const revoked = await service.setLeader(miembro.id, false);
+    expect(revoked.isLeader).toBe(false);
+  });
 });

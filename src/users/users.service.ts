@@ -1,5 +1,11 @@
-import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { Prisma } from '@prisma/client';
+import { hash } from 'bcryptjs';
 import { PaginationInput } from '../common/pagination/pagination.input';
 import { decodeCursor, encodeCursor } from '../common/pagination/encode-cursor';
 import { PrismaService } from '../prisma/prisma.service';
@@ -7,6 +13,7 @@ import {
   CreateUserData,
   UpdateUserData,
   createUserSchema,
+  membershipInfoSchema,
   updateUserSchema,
 } from './dto/inputs.schema';
 import { toUserModel } from './dto/to-user-model';
@@ -59,6 +66,37 @@ export class UsersService {
   async setPastor(id: string, isPastor: boolean): Promise<UserRow> {
     await this.findByIdOrThrow(id);
     return this.prisma.user.update({ where: { id }, data: { isPastor } });
+  }
+
+  async setLeader(id: string, isLeader: boolean): Promise<UserRow> {
+    const user = await this.findByIdOrThrow(id);
+    if (isLeader && user.baseRole !== 'MIEMBRO' && !user.isPastor) {
+      throw new BadRequestException('Solo los miembros pueden recibir el rol de líder.');
+    }
+    return this.prisma.user.update({ where: { id }, data: { isLeader } });
+  }
+
+  async setMembershipInfo(id: string, raw: unknown): Promise<UserRow> {
+    const data = membershipInfoSchema.parse(raw);
+    await this.findByIdOrThrow(id);
+    return this.prisma.user.update({ where: { id }, data });
+  }
+
+  async setSignInAllowed(id: string, allowed: boolean): Promise<UserRow> {
+    await this.findByIdOrThrow(id);
+    // TODO(google-auth): when canSignIn flips false→true, send the invitation email (see auth spec).
+    return this.prisma.user.update({ where: { id }, data: { canSignIn: allowed } });
+  }
+
+  async setPassword(id: string, password: string): Promise<UserRow> {
+    if (password.length < 8) {
+      throw new BadRequestException('Password must be at least 8 characters long.');
+    }
+    await this.findByIdOrThrow(id);
+    return this.prisma.user.update({
+      where: { id },
+      data: { passwordHash: await hash(password, 10) },
+    });
   }
 
   async list(filter: UserFilterInput, page: PaginationInput): Promise<UserConnection> {

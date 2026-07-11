@@ -1,0 +1,33 @@
+import { PrismaClient } from '@prisma/client';
+
+/** Deletes all rows respecting FK order. Shared by every suite that hits the DB. */
+export async function wipeDb(prisma: PrismaClient): Promise<void> {
+  const tables = [
+    'PostReaction',
+    'PostComment',
+    'PostImage',
+    'Post',
+    'Event',
+    'ChurchObservation',
+    'MembershipJourney',
+    'AssignmentSubmission',
+    'SessionAssignment',
+    'SessionMaterial',
+    'SessionAttendance',
+    'GroupSession',
+    'GroupMembership',
+    'Group',
+    'CourseCompletion',
+    'CourseLessonTask',
+    'CourseLesson',
+    'CourseTopic',
+    'Course',
+    'Session',
+    'MinistryMembership',
+    'User',
+    'Ministry',
+  ];
+  for (const table of tables) {
+    await prisma.$executeRawUnsafe(`DELETE FROM "${table}"`);
+  }
+}

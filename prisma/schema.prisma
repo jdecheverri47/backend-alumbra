@@ -17,6 +17,40 @@ enum MinistryRole {
   MEMBER
 }
 
+enum GroupType {
+  MADUREZ
+  CONEXION
+  CURSO
+}
+
+enum JourneyStage {
+  PRE_ENTREVISTA
+  VALIDADO
+  EN_RUTA
+  ENTREGA_FINAL
+  FILTRO_IGLESIA
+  ENTREVISTA_PASTORAL
+  MIEMBRO
+  NO_CONTINUA
+}
+
+enum PostType {
+  POST
+  ANUNCIO
+}
+
+enum ReactionType {
+  LIKE
+  AMEN
+  LOVE
+}
+
+enum GroupSessionStatus {
+  PROGRAMADA
+  REPROGRAMADA
+  CANCELADA
+}
+
 model User {
   id        String   @id @default(cuid())
   email     String   @unique
@@ -24,19 +58,64 @@ model User {
   lastName  String
   baseRole  BaseRole @default(ASISTENTE)
   isPastor  Boolean  @default(false)
+  // Rol de líder (p. ej. dirige cohortes de la Ruta). Lo otorgan/revocan los pastores.
+  isLeader  Boolean  @default(false)
+
+  // Auth: credentials login. Nullable — bulk-imported users have no password yet.
+  passwordHash String?
+  canSignIn    Boolean @default(false)
 
   phone     String?
   photoUrl  String?
+  coverUrl  String?
   googleId  String?  @unique
   birthDate DateTime?
 
+  // Registros de membresía (los administra un pastor).
+  membershipDate DateTime?
+  baptismDate    DateTime?
+
   ministryMemberships MinistryMembership[]
+  sessions            Session[]
+  ledGroups           Group[]              @relation("GroupLeader")
+  groupMemberships    GroupMembership[]    @relation("GroupMember")
+  addedGroupMembers   GroupMembership[]    @relation("GroupMemberAddedBy")
+  createdEvents       Event[]
+  posts               Post[]
+  postReactions       PostReaction[]
+  postComments        PostComment[]
+  createdSessions     GroupSession[]         @relation("GroupSessionCreator")
+  uploadedMaterials   SessionMaterial[]      @relation("MaterialUploader")
+  submissions         AssignmentSubmission[] @relation("Submitter")
+  attendances         SessionAttendance[]    @relation("Attendee")
+  recordedAttendances SessionAttendance[]    @relation("AttendanceRecorder")
+  courseCompletions   CourseCompletion[]     @relation("CompletionUser")
+  certifiedCompletions CourseCompletion[]    @relation("CompletionCertifier")
+  membershipJourney   MembershipJourney?     @relation("JourneyUser")
+  interviewedJourneys MembershipJourney[]    @relation("JourneyInterviewer")
+  churchObservations  ChurchObservation[]
 
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
   deletedAt DateTime?
 
   @@index([deletedAt])
+}
+
+model Session {
+  id               String    @id @default(cuid())
+  userId           String
+  user             User      @relation(fields: [userId], references: [id])
+  refreshTokenHash String    @unique
+  userAgent        String?
+  ipAddress        String?
+  createdAt        DateTime  @default(now())
+  lastUsedAt       DateTime  @default(now())
+  expiresAt        DateTime
+  revokedAt        DateTime?
+
+  @@index([userId])
+  @@index([expiresAt])
 }
 
 model Ministry {
@@ -66,4 +145,341 @@ model MinistryMembership {
   @@unique([userId, ministryId, joinedAt])
   @@index([ministryId])
   @@index([userId])
+}
+
+model Group {
+  id          String    @id @default(cuid())
+  type        GroupType
+  name        String
+  description String?
+  leaderId    String
+  // Cohorte de un curso (Evangelio / Ruta de Crecimiento) cuando type = CURSO.
+  courseId    String?
+  // Weekly in-person meeting; the client projects it onto the calendar.
+  meetingDay  Int? // 0=domingo … 6=sábado
+  meetingTime String? // "19:00"
+  location    String?
+
+  leader      User              @relation("GroupLeader", fields: [leaderId], references: [id])
+  course      Course?           @relation(fields: [courseId], references: [id])
+  memberships GroupMembership[]
+  events      Event[]
+  sessions    GroupSession[]
+  journeys    MembershipJourney[] @relation("JourneyRutaGroup")
+
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+  archivedAt DateTime?
+
+  @@index([leaderId])
+}
+
+model GroupMembership {
+  id        String    @id @default(cuid())
+  userId    String
+  groupId   String
+  addedById String?
+  joinedAt  DateTime  @default(now())
+  leftAt    DateTime?
+
+  user    User  @relation("GroupMember", fields: [userId], references: [id])
+  group   Group @relation(fields: [groupId], references: [id])
+  addedBy User? @relation("GroupMemberAddedBy", fields: [addedById], references: [id])
+
+  @@unique([userId, groupId, joinedAt])
+  @@index([groupId])
+  @@index([userId])
+}
+
+model GroupSession {
+  id      String @id @default(cuid())
+  groupId String
+
+  // Fecha canónica de la reunión de esa semana; startsAt difiere si fue reprogramada.
+  scheduledFor DateTime
+  startsAt     DateTime
+  status       GroupSessionStatus @default(PROGRAMADA)
+  title        String?
+  note         String?
+  createdById  String
+  // Clase del currículo que implementa esta sesión (cohortes de curso).
+  lessonId     String?
+
+  group       Group                @relation(fields: [groupId], references: [id])
+  createdBy   User                 @relation("GroupSessionCreator", fields: [createdById], references: [id])
+  lesson      CourseLesson?        @relation(fields: [lessonId], references: [id])
+  materials   SessionMaterial[]
+  assignments SessionAssignment[]
+  attendances SessionAttendance[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([groupId, scheduledFor])
+  @@index([startsAt])
+}
+
+model SessionMaterial {
+  id           String   @id @default(cuid())
+  sessionId    String
+  title        String
+  url          String
+  uploadedById String
+  createdAt    DateTime @default(now())
+
+  session    GroupSession @relation(fields: [sessionId], references: [id])
+  uploadedBy User         @relation("MaterialUploader", fields: [uploadedById], references: [id])
+
+  @@index([sessionId])
+}
+
+model SessionAssignment {
+  id          String    @id @default(cuid())
+  sessionId   String
+  title       String
+  description String?
+  dueAt       DateTime?
+  createdAt   DateTime  @default(now())
+
+  session     GroupSession           @relation(fields: [sessionId], references: [id])
+  submissions AssignmentSubmission[]
+
+  @@index([sessionId])
+}
+
+model AssignmentSubmission {
+  id           String   @id @default(cuid())
+  assignmentId String
+  userId       String
+  url          String
+  submittedAt  DateTime @default(now())
+
+  assignment SessionAssignment @relation(fields: [assignmentId], references: [id])
+  user       User              @relation("Submitter", fields: [userId], references: [id])
+
+  @@unique([assignmentId, userId])
+}
+
+model SessionAttendance {
+  id           String   @id @default(cuid())
+  sessionId    String
+  userId       String
+  checkedInAt  DateTime @default(now())
+  recordedById String
+
+  session    GroupSession @relation(fields: [sessionId], references: [id])
+  user       User         @relation("Attendee", fields: [userId], references: [id])
+  recordedBy User         @relation("AttendanceRecorder", fields: [recordedById], references: [id])
+
+  @@unique([sessionId, userId])
+}
+
+model Course {
+  id             String  @id @default(cuid())
+  slug           String  @unique
+  name           String
+  description    String?
+  prerequisiteId String?
+
+  prerequisite Course?  @relation("CoursePrerequisite", fields: [prerequisiteId], references: [id])
+  dependents   Course[] @relation("CoursePrerequisite")
+
+  topics      CourseTopic[]
+  groups      Group[]
+  completions CourseCompletion[]
+
+  createdAt DateTime @default(now())
+}
+
+model CourseTopic {
+  id          String  @id @default(cuid())
+  courseId    String
+  order       Int
+  title       String
+  description String?
+
+  course  Course         @relation(fields: [courseId], references: [id])
+  lessons CourseLesson[]
+
+  @@unique([courseId, order])
+}
+
+model CourseLesson {
+  id          String  @id @default(cuid())
+  topicId     String
+  order       Int
+  title       String
+  description String?
+
+  topic    CourseTopic        @relation(fields: [topicId], references: [id])
+  tasks    CourseLessonTask[]
+  sessions GroupSession[]
+
+  @@unique([topicId, order])
+}
+
+model CourseLessonTask {
+  id          String  @id @default(cuid())
+  lessonId    String
+  order       Int
+  title       String
+  description String?
+
+  lesson CourseLesson @relation(fields: [lessonId], references: [id])
+
+  @@unique([lessonId, order])
+}
+
+model CourseCompletion {
+  id            String   @id @default(cuid())
+  userId        String
+  courseId      String
+  completedAt   DateTime @default(now())
+  certifiedById String
+
+  user        User   @relation("CompletionUser", fields: [userId], references: [id])
+  course      Course @relation(fields: [courseId], references: [id])
+  certifiedBy User   @relation("CompletionCertifier", fields: [certifiedById], references: [id])
+
+  @@unique([userId, courseId])
+}
+
+model MembershipJourney {
+  id     String       @id @default(cuid())
+  userId String       @unique
+  stage  JourneyStage @default(PRE_ENTREVISTA)
+
+  interviewerId     String?
+  preInterviewAt    DateTime?
+  preInterviewNotes String?
+
+  validatedAt DateTime?
+
+  rutaGroupId     String?
+  rutaCompletedAt DateTime?
+
+  essayUrl         String?
+  testimony        String?
+  imageUrl         String?
+  finalSubmittedAt DateTime?
+
+  churchFilterOpenedAt DateTime?
+  churchFilterClosedAt DateTime?
+  churchFilterPassed   Boolean?
+
+  pastoralInterviewAt DateTime?
+  covenantSignedAt    DateTime?
+
+  // Notas internas pastorales.
+  notes String?
+
+  user        User   @relation("JourneyUser", fields: [userId], references: [id])
+  interviewer User?  @relation("JourneyInterviewer", fields: [interviewerId], references: [id])
+  rutaGroup   Group? @relation("JourneyRutaGroup", fields: [rutaGroupId], references: [id])
+
+  observations ChurchObservation[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([stage])
+}
+
+model ChurchObservation {
+  id        String   @id @default(cuid())
+  journeyId String
+  authorId  String
+  body      String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  journey MembershipJourney @relation(fields: [journeyId], references: [id])
+  author  User              @relation(fields: [authorId], references: [id])
+
+  @@unique([journeyId, authorId])
+}
+
+model Event {
+  id          String    @id @default(cuid())
+  title       String
+  description String?
+  location    String?
+  startsAt    DateTime
+  endsAt      DateTime?
+  // null = general event, visible to everyone
+  groupId     String?
+  createdById String
+
+  group     Group? @relation(fields: [groupId], references: [id])
+  createdBy User   @relation(fields: [createdById], references: [id])
+  posts     Post[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([startsAt])
+  @@index([groupId])
+}
+
+model Post {
+  id       String    @id @default(cuid())
+  authorId String
+  type     PostType  @default(POST)
+  body     String
+  // Only ANUNCIO posts get pinned; ordered by pinnedAt desc.
+  pinnedAt DateTime?
+  eventId  String?
+
+  author    User           @relation(fields: [authorId], references: [id])
+  event     Event?         @relation(fields: [eventId], references: [id])
+  images    PostImage[]
+  reactions PostReaction[]
+  comments  PostComment[]
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  @@index([createdAt])
+  @@index([deletedAt])
+}
+
+model PostImage {
+  id       String @id @default(cuid())
+  postId   String
+  url      String
+  position Int    @default(0)
+
+  post Post @relation(fields: [postId], references: [id])
+
+  @@index([postId])
+}
+
+model PostReaction {
+  id        String       @id @default(cuid())
+  postId    String
+  userId    String
+  type      ReactionType
+  createdAt DateTime     @default(now())
+
+  post Post @relation(fields: [postId], references: [id])
+  user User @relation(fields: [userId], references: [id])
+
+  @@unique([postId, userId])
+  @@index([postId])
+}
+
+model PostComment {
+  id       String @id @default(cuid())
+  postId   String
+  authorId String
+  body     String
+
+  post   Post @relation(fields: [postId], references: [id])
+  author User @relation(fields: [authorId], references: [id])
+
+  createdAt DateTime  @default(now())
+  deletedAt DateTime?
+
+  @@index([postId])
 }

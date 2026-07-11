@@ -2,10 +2,30 @@
 # THIS FILE WAS AUTOMATICALLY GENERATED (DO NOT MODIFY)
 # ------------------------------------------------------
 
+input AddSessionMaterialInput {
+  sessionId: ID!
+  title: String!
+
+  """URL devuelta por POST /uploads."""
+  url: String!
+}
+
+input AddUserToGroupInput {
+  groupId: ID!
+  userId: ID!
+}
+
 input AddUserToMinistryInput {
   ministryId: ID!
   role: MinistryRole!
   userId: ID!
+}
+
+type AssignmentSubmission {
+  id: ID!
+  submittedAt: DateTime!
+  url: String!
+  user: User!
 }
 
 enum BaseRole {
@@ -13,10 +33,134 @@ enum BaseRole {
   MIEMBRO
 }
 
+"""Filtro de iglesia abierto para un candidato, visto por un miembro."""
+type ChurchFilterInfo {
+  candidate: User!
+  journeyId: ID!
+
+  """Mi observación ya enviada, si existe."""
+  myObservation: String
+  openedAt: DateTime!
+}
+
+type ChurchObservation {
+  author: User!
+  body: String!
+  createdAt: DateTime!
+  id: ID!
+  updatedAt: DateTime!
+}
+
+type Course {
+  description: String
+  id: ID!
+  name: String!
+
+  """Curso requerido antes de este."""
+  prerequisite: Course
+  slug: String!
+  topics: [CourseTopic!]!
+}
+
+type CourseCompletion {
+  certifiedBy: User!
+  completedAt: DateTime!
+  course: Course!
+  id: ID!
+}
+
+type CourseLesson {
+  description: String
+  id: ID!
+  order: Int!
+  tasks: [CourseLessonTask!]!
+  title: String!
+}
+
+type CourseLessonTask {
+  description: String
+  id: ID!
+  order: Int!
+  title: String!
+}
+
+type CourseTopic {
+  description: String
+  id: ID!
+  lessons: [CourseLesson!]!
+  order: Int!
+  title: String!
+}
+
+input CreateEventInput {
+  description: String
+  endsAt: DateTime
+
+  """null = evento general (solo pastores)."""
+  groupId: ID
+  location: String
+  startsAt: DateTime!
+  title: String!
+}
+
+input CreateGroupInput {
+  """Curso, cuando el grupo es una cohorte."""
+  courseId: ID
+  description: String
+
+  """Default: quien crea el grupo."""
+  leaderId: ID
+  location: String
+
+  """0=domingo … 6=sábado"""
+  meetingDay: Int
+
+  """
+  "HH:mm"
+  """
+  meetingTime: String
+  name: String!
+  type: GroupType!
+}
+
+input CreateGroupSessionInput {
+  groupId: ID!
+
+  """Clase del currículo (cohortes). En la Ruta debe respetar el orden."""
+  lessonId: ID
+
+  """Fecha canónica de la reunión de esa semana."""
+  scheduledFor: DateTime!
+
+  """Default: scheduledFor."""
+  startsAt: DateTime
+
+  """Tema de la clase."""
+  title: String
+}
+
 input CreateMinistryInput {
   description: String
   name: String!
   slug: String!
+}
+
+input CreatePostInput {
+  body: String!
+
+  """Evento a difundir con este post."""
+  eventId: ID
+
+  """URLs devueltas por POST /uploads."""
+  imageUrls: [String!]! = []
+  type: PostType! = POST
+}
+
+input CreateSessionAssignmentInput {
+  description: String
+  dueAt: DateTime
+  sessionId: ID!
+  title: String!
 }
 
 input CreateUserInput {
@@ -31,6 +175,149 @@ input CreateUserInput {
 A date-time string at UTC, such as 2019-12-03T09:54:33Z, compliant with the date-time format.
 """
 scalar DateTime
+
+type Event {
+  createdAt: DateTime!
+  createdBy: User!
+  description: String
+  endsAt: DateTime
+
+  """null = evento general."""
+  group: Group
+  id: ID!
+  location: String
+  startsAt: DateTime!
+  title: String!
+}
+
+type FeedPermissions {
+  """Puede publicar anuncios y fijarlos (pastor)."""
+  canAnnounce: Boolean!
+
+  """Puede publicar posts (pastor o líder)."""
+  canPost: Boolean!
+}
+
+type Group {
+  archivedAt: DateTime
+
+  """Solo cohortes (type CURSO)."""
+  course: GroupCourse
+  createdAt: DateTime!
+  description: String
+  id: ID!
+  leader: User!
+  location: String
+
+  """0=domingo … 6=sábado"""
+  meetingDay: Int
+
+  """
+  Hora local "HH:mm"
+  """
+  meetingTime: String
+  members: [GroupMembership!]!
+  name: String!
+  type: GroupType!
+}
+
+"""Curso al que pertenece una cohorte."""
+type GroupCourse {
+  id: ID!
+  name: String!
+  slug: String!
+}
+
+type GroupMembership {
+  id: ID!
+  joinedAt: DateTime!
+  leftAt: DateTime
+  user: User!
+}
+
+type GroupSession {
+  assignments: [SessionAssignment!]!
+
+  """Líder/pastor: toda la asistencia con horas. Miembro: solo la propia."""
+  attendances: [SessionAttendance!]!
+  group: Group!
+  id: ID!
+  lesson: SessionLesson
+  materials: [SessionMaterial!]!
+
+  """Nota de reprogramación/cancelación."""
+  note: String
+
+  """Fecha canónica de la reunión de esa semana."""
+  scheduledFor: DateTime!
+
+  """Fecha/hora efectiva (difiere si fue reprogramada)."""
+  startsAt: DateTime!
+  status: GroupSessionStatus!
+
+  """Tema de la clase."""
+  title: String
+}
+
+enum GroupSessionStatus {
+  CANCELADA
+  PROGRAMADA
+  REPROGRAMADA
+}
+
+enum GroupType {
+  CONEXION
+  CURSO
+  MADUREZ
+}
+
+enum JourneyStage {
+  ENTREGA_FINAL
+  ENTREVISTA_PASTORAL
+  EN_RUTA
+  FILTRO_IGLESIA
+  MIEMBRO
+  NO_CONTINUA
+  PRE_ENTREVISTA
+  VALIDADO
+}
+
+input MembershipInfoInput {
+  """Fecha de bautismo."""
+  baptismDate: DateTime
+
+  """Fecha de anexo a membresía."""
+  membershipDate: DateTime
+}
+
+type MembershipJourney {
+  churchFilterClosedAt: DateTime
+  churchFilterOpenedAt: DateTime
+  churchFilterPassed: Boolean
+  covenantSignedAt: DateTime
+  createdAt: DateTime!
+  essayUrl: String
+  finalSubmittedAt: DateTime
+  id: ID!
+  imageUrl: String
+  interviewer: User
+
+  """Notas internas pastorales (solo pastores/entrevistador)."""
+  notes: String
+  pastoralInterviewAt: DateTime
+  preInterviewAt: DateTime
+
+  """Notas de la pre-entrevista (solo pastores/entrevistador)."""
+  preInterviewNotes: String
+  rutaCompletedAt: DateTime
+
+  """Cohorte de la Ruta."""
+  rutaGroup: Group
+  stage: JourneyStage!
+  testimony: String
+  user: User!
+  validatedAt: DateTime
+}
 
 type Ministry {
   archivedAt: DateTime
@@ -57,15 +344,80 @@ enum MinistryRole {
 }
 
 type Mutation {
+  """Deja (o actualiza) mi observación sobre el candidato."""
+  addChurchObservation(body: String!, journeyId: ID!): Boolean!
+  addPostComment(body: String!, postId: ID!): PostComment!
+  addSessionMaterial(input: AddSessionMaterialInput!): SessionMaterial!
+  addUserToGroup(input: AddUserToGroupInput!): GroupMembership!
   addUserToMinistry(input: AddUserToMinistryInput!): MinistryMembership!
+  archiveGroup(id: ID!): Group!
   archiveMinistry(id: ID!): Ministry!
+
+  """Asigna a una cohorte de la Ruta."""
+  assignJourneyToRuta(groupId: ID!, id: ID!): MembershipJourney!
+  cancelGroupSession(id: ID!, note: String): GroupSession!
+  certifyCourseCompletion(courseId: ID!, userId: ID!): CourseCompletion!
+
+  """Registra el ingreso de un miembro a la clase (guarda la hora)."""
+  checkInToSession(sessionId: ID!, userId: ID!): SessionAttendance!
+  closeChurchFilter(id: ID!, passed: Boolean!, pastoralInterviewAt: DateTime): MembershipJourney!
+
+  """Marca la Ruta como terminada."""
+  completeRuta(id: ID!): MembershipJourney!
+  createEvent(input: CreateEventInput!): Event!
+  createGroup(input: CreateGroupInput!): Group!
+  createGroupSession(input: CreateGroupSessionInput!): GroupSession!
   createMinistry(input: CreateMinistryInput!): Ministry!
+  createPost(input: CreatePostInput!): Post!
+  createSessionAssignment(input: CreateSessionAssignmentInput!): SessionAssignment!
   createUser(input: CreateUserInput!): User!
+  deleteEvent(id: ID!): Event!
+  deletePost(id: ID!): Post!
+  deletePostComment(id: ID!): PostComment!
+
+  """Abre el filtro de iglesia y publica el anuncio."""
+  openChurchFilter(id: ID!): MembershipJourney!
+
+  """Crea o reemplaza mi reacción al post."""
+  reactToPost(postId: ID!, type: ReactionType!): Post!
+  removePostReaction(postId: ID!): Post!
+  removeSessionMaterial(id: ID!): Boolean!
+  removeUserFromGroup(membershipId: ID!): GroupMembership!
   removeUserFromMinistry(membershipId: ID!): MinistryMembership!
+
+  """Reprogramar (reactiva si estaba cancelada)."""
+  rescheduleGroupSession(id: ID!, note: String, startsAt: DateTime!): GroupSession!
+  setPostPinned(id: ID!, pinned: Boolean!): Post!
+
+  """Otorga o revoca el rol de líder a un miembro."""
+  setUserLeader(id: ID!, isLeader: Boolean!): User!
+
+  """Registra fechas de membresía y bautismo."""
+  setUserMembershipInfo(id: ID!, input: MembershipInfoInput!): User!
+  setUserPassword(id: ID!, password: String!): User!
   setUserPastor(id: ID!, isPastor: Boolean!): User!
+  setUserSignInAllowed(allowed: Boolean!, id: ID!): User!
+
+  """Firma del pacto: la persona pasa a ser MIEMBRO."""
+  signCovenant(date: DateTime, id: ID!): MembershipJourney!
   softDeleteUser(id: ID!): User!
+
+  """Registra la pre-entrevista."""
+  startMembershipJourney(input: StartJourneyInput!): MembershipJourney!
+
+  """Sube (o reemplaza) mi trabajo de la clase."""
+  submitAssignment(assignmentId: ID!, url: String!): AssignmentSubmission!
+
+  """El candidato entrega ensayo, testimonio e imagen."""
+  submitFinalWork(input: SubmitFinalWorkInput!): MembershipJourney!
+  undoCheckIn(sessionId: ID!, userId: ID!): Boolean!
+  updateEvent(id: ID!, input: UpdateEventInput!): Event!
+  updateGroup(id: ID!, input: UpdateGroupInput!): Group!
   updateMinistry(id: ID!, input: UpdateMinistryInput!): Ministry!
   updateUser(id: ID!, input: UpdateUserInput!): User!
+
+  """Valida (o no) la entrada a la Ruta. Exige Evangelio certificado."""
+  validateJourney(approved: Boolean!, id: ID!, notes: String): MembershipJourney!
 }
 
 type PageInfo {
@@ -78,13 +430,199 @@ input PaginationInput {
   first: Int! = 20
 }
 
+type Post {
+  author: User!
+  body: String!
+  commentCount: Int!
+  createdAt: DateTime!
+  event: Event
+  id: ID!
+  images: [PostImage!]!
+  myReaction: ReactionType
+  pinnedAt: DateTime
+  reactionCounts: [ReactionCount!]!
+  type: PostType!
+}
+
+type PostComment {
+  author: User!
+  body: String!
+  createdAt: DateTime!
+  id: ID!
+}
+
+type PostConnection {
+  edges: [PostEdge!]!
+  pageInfo: PageInfo!
+}
+
+type PostEdge {
+  cursor: String!
+  node: Post!
+}
+
+type PostImage {
+  id: ID!
+  position: Int!
+  url: String!
+}
+
+enum PostType {
+  ANUNCIO
+  POST
+}
+
 type Query {
   """Placeholder until the first real queries ship."""
   apiVersion: String!
+
+  """Filtro de iglesia abierto para un candidato (para miembros)."""
+  churchFilterFor(userId: ID!): ChurchFilterInfo
+
+  """Cursos certificados de una persona."""
+  courseCompletions(userId: ID!): [CourseCompletion!]!
+
+  """Cursos con su currículo (temas → clases → tareas)."""
+  courses: [Course!]!
+
+  """Eventos visibles para mí en el rango [from, to]."""
+  events(from: DateTime!, to: DateTime!): [Event!]!
+
+  """Feed principal, más reciente primero."""
+  feed(pagination: PaginationInput): PostConnection!
+  group(id: ID!): Group!
+  groupSession(id: ID!): GroupSession!
+
+  """Clases de un grupo, más reciente primero."""
+  groupSessions(groupId: ID!): [GroupSession!]!
+
+  """Clases de mis grupos que tocan el rango (para el calendario)."""
+  groupSessionsInRange(from: DateTime!, to: DateTime!): [GroupSession!]!
+
+  """Todos los grupos (solo pastores)."""
+  groups(includeArchived: Boolean! = false): [Group!]!
+
+  """Observaciones del filtro (pastores)."""
+  journeyObservations(journeyId: ID!): [ChurchObservation!]!
+
+  """The currently authenticated user."""
+  me: User!
+
+  """Proceso de una persona (pastor, entrevistador o la propia persona)."""
+  membershipJourneyOf(userId: ID!): MembershipJourney
+
+  """Tablero de candidatos (pastores)."""
+  membershipJourneys(stage: JourneyStage): [MembershipJourney!]!
   ministries(includeArchived: Boolean! = false): [Ministry!]!
   ministry(slug: String!): Ministry
+  myFeedPermissions: FeedPermissions!
+
+  """Grupos donde soy miembro activo o líder."""
+  myGroups: [Group!]!
+
+  """Procesos donde soy el entrevistador."""
+  myInterviews: [MembershipJourney!]!
+
+  """Mi proceso de membresía."""
+  myJourney: MembershipJourney
+
+  """Anuncios fijados, para mostrar arriba del feed."""
+  pinnedAnnouncements: [Post!]!
+
+  """Comentarios de un post, más antiguo primero."""
+  postComments(postId: ID!): [PostComment!]!
   user(id: ID!): User
   users(filter: UserFilterInput, pagination: PaginationInput): UserConnection!
+}
+
+type ReactionCount {
+  count: Int!
+  type: ReactionType!
+}
+
+enum ReactionType {
+  AMEN
+  LIKE
+  LOVE
+}
+
+type SessionAssignment {
+  createdAt: DateTime!
+  description: String
+  dueAt: DateTime
+  id: ID!
+  mySubmission: AssignmentSubmission
+
+  """Líder/pastor: todas las entregas. Miembro: solo la propia."""
+  submissions: [AssignmentSubmission!]!
+  title: String!
+}
+
+type SessionAttendance {
+  """Hora de ingreso a la clase."""
+  checkedInAt: DateTime!
+  id: ID!
+  user: User!
+}
+
+"""Clase del currículo que implementa esta sesión."""
+type SessionLesson {
+  description: String
+  id: ID!
+  order: Int!
+  title: String!
+  topic: SessionLessonTopic!
+}
+
+type SessionLessonTopic {
+  id: ID!
+  order: Int!
+  title: String!
+}
+
+type SessionMaterial {
+  createdAt: DateTime!
+  id: ID!
+  title: String!
+  uploadedBy: User!
+  url: String!
+}
+
+input StartJourneyInput {
+  """Default: quien registra."""
+  interviewerId: ID
+
+  """Default: ahora."""
+  preInterviewAt: DateTime
+  preInterviewNotes: String
+  userId: ID!
+}
+
+input SubmitFinalWorkInput {
+  """Ensayo (~2000 palabras), archivo subido a /uploads."""
+  essayUrl: String!
+
+  """Imagen, subida a /uploads."""
+  imageUrl: String!
+
+  """Testimonio en texto."""
+  testimony: String!
+}
+
+input UpdateEventInput {
+  description: String
+  endsAt: DateTime
+  location: String
+  startsAt: DateTime
+  title: String
+}
+
+input UpdateGroupInput {
+  description: String
+  location: String
+  meetingDay: Int
+  meetingTime: String
+  name: String
 }
 
 input UpdateMinistryInput {
@@ -94,6 +632,7 @@ input UpdateMinistryInput {
 
 input UpdateUserInput {
   birthDate: DateTime
+  coverUrl: String
   firstName: String
   lastName: String
   phone: String
@@ -101,8 +640,16 @@ input UpdateUserInput {
 }
 
 type User {
+  """Fecha de bautismo."""
+  baptismDate: DateTime
   baseRole: BaseRole!
   birthDate: DateTime
+
+  """Whether the user is allowed to log in."""
+  canSignIn: Boolean!
+
+  """Imagen de portada del perfil."""
+  coverUrl: String
   createdAt: DateTime!
   email: String!
   firstName: String!
@@ -110,8 +657,14 @@ type User {
   """Computed: firstName + " " + lastName."""
   fullName: String!
   id: ID!
+
+  """Rol de líder (dirige cohortes de la Ruta). Lo otorgan los pastores."""
+  isLeader: Boolean!
   isPastor: Boolean!
   lastName: String!
+
+  """Fecha de anexo a membresía."""
+  membershipDate: DateTime
   ministries: [MinistryMembership!]!
   phone: String
   photoUrl: String

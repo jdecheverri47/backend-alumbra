@@ -25,3 +25,4 @@ coverage/
 prisma/*.db
 
 # Note: src/graphql/schema.gql IS committed (see scaffold spec)
+uploads/

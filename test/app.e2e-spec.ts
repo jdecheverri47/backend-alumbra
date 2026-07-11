@@ -3,13 +3,19 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { PrismaClient } from '@prisma/client';
 import request from 'supertest';
 import { AppModule } from '../src/app.module';
+import { createUserWithPassword, login } from './setup/auth-helper';
 import { requireLocalDb } from './setup/require-local-db';
+import { wipeDb } from './setup/wipe-db';
 
-const gql = (app: INestApplication) => request(app.getHttpServer()).post('/graphql');
+let accessToken = '';
+const gql = (app: INestApplication) =>
+  request(app.getHttpServer()).post('/graphql').set('Authorization', `Bearer ${accessToken}`);
 
 describe('Spec A happy path (e2e)', () => {
   let app: INestApplication;
   let prisma: PrismaClient;
+
+  const wipe = () => wipeDb(prisma);
 
   beforeAll(async () => {
     requireLocalDb();
@@ -21,19 +27,22 @@ describe('Spec A happy path (e2e)', () => {
     await app.init();
     prisma = new PrismaClient();
     await prisma.$connect();
-    await prisma.$executeRawUnsafe('DELETE FROM "MinistryMembership"');
-    await prisma.$executeRawUnsafe('DELETE FROM "User"');
-    await prisma.$executeRawUnsafe('DELETE FROM "Ministry"');
+    await wipe();
     // Recreate Acogida since we just wiped it
     await prisma.ministry.create({
       data: { slug: 'acogida', name: 'Acogida' },
     });
+    // All operations below run as an authenticated pastor.
+    await createUserWithPassword(prisma, {
+      email: 'pastor@alumbra.test',
+      password: 'super-secret-1',
+      isPastor: true,
+    });
+    accessToken = (await login(app, 'pastor@alumbra.test', 'super-secret-1')).accessToken;
   });
 
   afterAll(async () => {
-    await prisma.$executeRawUnsafe('DELETE FROM "MinistryMembership"');
-    await prisma.$executeRawUnsafe('DELETE FROM "User"');
-    await prisma.$executeRawUnsafe('DELETE FROM "Ministry"');
+    await wipe();
     await prisma.$disconnect();
     await app.close();
   });

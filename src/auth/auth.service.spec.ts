@@ -1,0 +1,198 @@
+import { ConfigService } from '@nestjs/config';
+import { JwtService } from '@nestjs/jwt';
+import { Test } from '@nestjs/testing';
+import { User } from '@prisma/client';
+import { hash } from 'bcryptjs';
+import { requireLocalDb } from '../../test/setup/require-local-db';
+import { PrismaService } from '../prisma/prisma.service';
+import { AuthService, hashRefreshToken } from './auth.service';
+
+const PASSWORD = 'super-secret-1';
+const CONFIG_STUB = {
+  get: (key: string) =>
+    ({ JWT_ACCESS_TTL: '15m', REFRESH_TTL_DAYS: 30 })[key as 'JWT_ACCESS_TTL' | 'REFRESH_TTL_DAYS'],
+};
+
+describe('AuthService', () => {
+  let service: AuthService;
+  let jwtService: JwtService;
+  let prisma: PrismaService;
+
+  const wipe = async () => {
+    await prisma.$executeRawUnsafe('DELETE FROM "Session"');
+    await prisma.$executeRawUnsafe('DELETE FROM "MinistryMembership"');
+    await prisma.$executeRawUnsafe('DELETE FROM "User"');
+  };
+
+  const createUser = async (overrides: Partial<User> = {}) =>
+    prisma.user.create({
+      data: {
+        email: 'ana@alumbra.test',
+        firstName: 'Ana',
+        lastName: 'Perez',
+        baseRole: 'MIEMBRO',
+        canSignIn: true,
+        passwordHash: await hash(PASSWORD, 10),
+        ...overrides,
+      },
+    });
+
+  beforeAll(async () => {
+    requireLocalDb();
+    const moduleRef = await Test.createTestingModule({
+      providers: [
+        AuthService,
+        PrismaService,
+        {
+          provide: JwtService,
+          useValue: new JwtService({ secret: 'test-secret-of-32-characters-min!!' }),
+        },
+        { provide: ConfigService, useValue: CONFIG_STUB },
+      ],
+    }).compile();
+
+    service = moduleRef.get(AuthService);
+    jwtService = moduleRef.get(JwtService);
+    prisma = moduleRef.get(PrismaService);
+    await prisma.$connect();
+    await wipe();
+  });
+
+  beforeEach(async () => {
+    await wipe();
+  });
+
+  afterAll(async () => {
+    await wipe();
+    await prisma.$disconnect();
+  });
+
+  describe('login', () => {
+    it('rejects unknown email, wrong password, and users without a password hash alike', async () => {
+      await createUser();
+      await createUser({ email: 'sinpass@alumbra.test', passwordHash: null });
+
+      await expect(
+        service.login({ email: 'nadie@alumbra.test', password: PASSWORD }, {}),
+      ).rejects.toMatchObject({ response: { error: 'INVALID_CREDENTIALS' } });
+      await expect(
+        service.login({ email: 'ana@alumbra.test', password: 'wrong' }, {}),
+      ).rejects.toMatchObject({ response: { error: 'INVALID_CREDENTIALS' } });
+      await expect(
+        service.login({ email: 'sinpass@alumbra.test', password: PASSWORD }, {}),
+      ).rejects.toMatchObject({ response: { error: 'INVALID_CREDENTIALS' } });
+    });
+
+    it('rejects soft-deleted users with the generic error', async () => {
+      await createUser({ deletedAt: new Date() });
+      await expect(
+        service.login({ email: 'ana@alumbra.test', password: PASSWORD }, {}),
+      ).rejects.toMatchObject({ response: { error: 'INVALID_CREDENTIALS' } });
+    });
+
+    it('rejects canSignIn=false with ACCESS_NOT_GRANTED', async () => {
+      await createUser({ canSignIn: false });
+      await expect(
+        service.login({ email: 'ana@alumbra.test', password: PASSWORD }, {}),
+      ).rejects.toMatchObject({ response: { error: 'ACCESS_NOT_GRANTED' } });
+    });
+
+    it('issues a valid access JWT and persists a hashed session', async () => {
+      const user = await createUser();
+      const result = await service.login(
+        { email: 'ANA@alumbra.test', password: PASSWORD },
+        { userAgent: 'jest', ipAddress: '127.0.0.1' },
+      );
+
+      const payload = await jwtService.verifyAsync(result.accessToken);
+      expect(payload.sub).toBe(user.id);
+      expect(payload.baseRole).toBe('MIEMBRO');
+
+      const session = await prisma.session.findUnique({
+        where: { refreshTokenHash: hashRefreshToken(result.refreshToken) },
+      });
+      expect(session?.userId).toBe(user.id);
+      expect(session?.userAgent).toBe('jest');
+      // The plain refresh token is never stored.
+      expect(session?.refreshTokenHash).not.toBe(result.refreshToken);
+    });
+  });
+
+  describe('refresh', () => {
+    it('rotates the token: old one stops working, new one works', async () => {
+      await createUser();
+      const first = await service.login({ email: 'ana@alumbra.test', password: PASSWORD }, {});
+
+      const second = await service.refresh(first.refreshToken, {});
+      expect(second.refreshToken).not.toBe(first.refreshToken);
+
+      // Old token no longer maps to a session → reuse path revokes everything.
+      await expect(service.refresh(first.refreshToken, {})).rejects.toMatchObject({
+        response: { error: 'INVALID_REFRESH_TOKEN' },
+      });
+    });
+
+    it('revokes ALL user sessions when a revoked token is reused', async () => {
+      const user = await createUser();
+      const a = await service.login({ email: 'ana@alumbra.test', password: PASSWORD }, {});
+      const b = await service.login({ email: 'ana@alumbra.test', password: PASSWORD }, {});
+
+      await service.logout(a.refreshToken);
+      await expect(service.refresh(a.refreshToken, {})).rejects.toMatchObject({
+        response: { error: 'INVALID_REFRESH_TOKEN' },
+      });
+
+      const active = await prisma.session.count({ where: { userId: user.id, revokedAt: null } });
+      expect(active).toBe(0);
+      // Session B was collateral damage, as designed.
+      await expect(service.refresh(b.refreshToken, {})).rejects.toMatchObject({
+        response: { error: 'INVALID_REFRESH_TOKEN' },
+      });
+    });
+
+    it('rejects expired sessions and missing tokens', async () => {
+      await createUser();
+      const { refreshToken } = await service.login(
+        { email: 'ana@alumbra.test', password: PASSWORD },
+        {},
+      );
+      await prisma.session.updateMany({ data: { expiresAt: new Date(Date.now() - 1000) } });
+
+      await expect(service.refresh(refreshToken, {})).rejects.toMatchObject({
+        response: { error: 'INVALID_REFRESH_TOKEN' },
+      });
+      await expect(service.refresh(undefined, {})).rejects.toMatchObject({
+        response: { error: 'NO_REFRESH_TOKEN' },
+      });
+    });
+
+    it('rejects refresh when the user lost sign-in access after logging in', async () => {
+      const user = await createUser();
+      const { refreshToken } = await service.login(
+        { email: 'ana@alumbra.test', password: PASSWORD },
+        {},
+      );
+      await prisma.user.update({ where: { id: user.id }, data: { canSignIn: false } });
+
+      await expect(service.refresh(refreshToken, {})).rejects.toMatchObject({
+        response: { error: 'INVALID_REFRESH_TOKEN' },
+      });
+    });
+  });
+
+  describe('logout', () => {
+    it('revokes the matching session and is a no-op without token', async () => {
+      const user = await createUser();
+      const { refreshToken } = await service.login(
+        { email: 'ana@alumbra.test', password: PASSWORD },
+        {},
+      );
+
+      await service.logout(refreshToken);
+      const session = await prisma.session.findFirst({ where: { userId: user.id } });
+      expect(session?.revokedAt).not.toBeNull();
+
+      await expect(service.logout(undefined)).resolves.toBeUndefined();
+    });
+  });
+});

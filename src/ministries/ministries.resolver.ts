@@ -1,5 +1,7 @@
 import { Args, ID, Mutation, Parent, Query, ResolveField, Resolver } from '@nestjs/graphql';
 import { Ministry } from '@prisma/client';
+import { RequireMinistryLeader } from '../auth/decorators/require-ministry-leader.decorator';
+import { RequirePastor } from '../auth/decorators/require-pastor.decorator';
 import { UsersService } from '../users/users.service';
 import { AddUserToMinistryInput } from './dto/add-user-to-ministry.input';
 import { CreateMinistryInput } from './dto/create-ministry.input';
@@ -39,13 +41,13 @@ export class MinistriesResolver {
     return rows.map((m) => toMembershipModel(m, m.user, ministry as unknown as Ministry));
   }
 
-  // TODO(auth): restrict to isPastor=true once auth lands. Currently open.
+  @RequirePastor()
   @Mutation(() => MinistryModel)
   async createMinistry(@Args('input') input: CreateMinistryInput): Promise<MinistryModel> {
     return this.ministriesService.create(input);
   }
 
-  // TODO(auth): restrict to isPastor=true once auth lands. Currently open.
+  @RequirePastor()
   @Mutation(() => MinistryModel)
   async updateMinistry(
     @Args('id', { type: () => ID }) id: string,
@@ -54,13 +56,15 @@ export class MinistriesResolver {
     return this.ministriesService.updateById(id, input);
   }
 
-  // TODO(auth): restrict to isPastor=true once auth lands. Currently open.
+  @RequirePastor()
   @Mutation(() => MinistryModel)
   async archiveMinistry(@Args('id', { type: () => ID }) id: string): Promise<MinistryModel> {
     return this.ministriesService.archive(id);
   }
 
-  // TODO(auth): restrict to isPastor=true once auth lands. Currently open.
+  @RequireMinistryLeader((args) => ({
+    ministryId: (args.input as AddUserToMinistryInput).ministryId,
+  }))
   @Mutation(() => MinistryMembershipModel)
   async addUserToMinistry(
     @Args('input') input: AddUserToMinistryInput,
@@ -73,7 +77,7 @@ export class MinistriesResolver {
     return toMembershipModel(m, user, ministry);
   }
 
-  // TODO(auth): restrict to isPastor=true once auth lands. Currently open.
+  @RequireMinistryLeader((args) => ({ membershipId: args.membershipId as string }))
   @Mutation(() => MinistryMembershipModel)
   async removeUserFromMinistry(
     @Args('membershipId', { type: () => ID }) membershipId: string,

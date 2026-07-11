@@ -14,6 +14,9 @@ export class UpdateUserInput {
   @Field(() => String, { nullable: true })
   photoUrl?: string | null;
 
+  @Field(() => String, { nullable: true })
+  coverUrl?: string | null;
+
   @Field(() => Date, { nullable: true })
   birthDate?: Date | null;
 }
