@@ -95,6 +95,21 @@ describe('GroupSessionsService', () => {
       ).rejects.toThrow(/líder|pastor/i);
     });
 
+    it('completar marca COMPLETADA (solo líder/pastor; nunca una cancelada)', async () => {
+      const session = await service.create(asAuth(lider), {
+        groupId,
+        scheduledFor: nextThursday,
+      });
+      await expect(service.complete(asAuth(miembro), session.id)).rejects.toThrow(
+        /líder|pastor/i,
+      );
+      const done = await service.complete(asAuth(lider), session.id);
+      expect(done.status).toBe('COMPLETADA');
+
+      await service.cancel(asAuth(lider), session.id);
+      await expect(service.complete(asAuth(lider), session.id)).rejects.toThrow(/cancelada/i);
+    });
+
     it('reprogramar cambia startsAt y estado; cancelar marca CANCELADA; reprogramar reactiva', async () => {
       const session = await service.create(asAuth(lider), {
         groupId,

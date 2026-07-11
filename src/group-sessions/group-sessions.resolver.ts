@@ -66,6 +66,14 @@ export class GroupSessionsResolver {
     return this.sessionsService.reschedule(me, id, { startsAt, note });
   }
 
+  @Mutation(() => GroupSessionModel, { description: 'Marca la clase como dictada.' })
+  async completeGroupSession(
+    @Args('id', { type: () => ID }) id: string,
+    @CurrentUser() me: AuthenticatedUser,
+  ): Promise<GroupSessionModel> {
+    return this.sessionsService.complete(me, id);
+  }
+
   @Mutation(() => GroupSessionModel)
   async cancelGroupSession(
     @Args('id', { type: () => ID }) id: string,

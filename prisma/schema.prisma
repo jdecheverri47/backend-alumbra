@@ -48,6 +48,7 @@ enum ReactionType {
 enum GroupSessionStatus {
   PROGRAMADA
   REPROGRAMADA
+  COMPLETADA
   CANCELADA
 }
 

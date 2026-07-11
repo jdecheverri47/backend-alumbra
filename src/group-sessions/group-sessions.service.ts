@@ -194,6 +194,21 @@ export class GroupSessionsService {
     return this.toModel(row, me, true);
   }
 
+  /** Marca la clase como dictada. */
+  async complete(me: AuthenticatedUser, id: string): Promise<GroupSessionModel> {
+    const session = await this.getSessionOrThrow(id);
+    this.assertLeaderOrPastor(me, session.group);
+    if (session.status === 'CANCELADA') {
+      throw new BadRequestException('Una clase cancelada no se puede marcar como completada.');
+    }
+    const row = await this.prisma.groupSession.update({
+      where: { id },
+      data: { status: 'COMPLETADA' },
+      include: SESSION_INCLUDE,
+    });
+    return this.toModel(row, me, true);
+  }
+
   async cancel(me: AuthenticatedUser, id: string, note?: string): Promise<GroupSessionModel> {
     const session = await this.getSessionOrThrow(id);
     this.assertLeaderOrPastor(me, session.group);

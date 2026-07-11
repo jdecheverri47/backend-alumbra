@@ -261,6 +261,7 @@ type GroupSession {
 
 enum GroupSessionStatus {
   CANCELADA
+  COMPLETADA
   PROGRAMADA
   REPROGRAMADA
 }
@@ -364,6 +365,9 @@ type Mutation {
   """Registra el ingreso de un miembro a la clase (guarda la hora)."""
   checkInToSession(sessionId: ID!, userId: ID!): SessionAttendance!
   closeChurchFilter(id: ID!, passed: Boolean!, pastoralInterviewAt: DateTime): MembershipJourney!
+
+  """Marca la clase como dictada."""
+  completeGroupSession(id: ID!): GroupSession!
 
   """Marca la Ruta como terminada."""
   completeRuta(id: ID!): MembershipJourney!
