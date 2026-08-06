@@ -14,6 +14,7 @@ export function toEventModel(event: EventRow): EventModel {
     startsAt: event.startsAt,
     endsAt: event.endsAt,
     group: event.group ? toGroupModel(event.group) : null,
+    membersOnly: event.membersOnly,
     createdBy: toUserModel(event.createdBy),
     createdAt: event.createdAt,
   };

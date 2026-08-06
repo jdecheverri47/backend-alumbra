@@ -21,15 +21,16 @@ export class FeedResolver {
 
   @Query(() => PostConnection, { description: 'Feed principal, más reciente primero.' })
   async feed(
+    @CurrentUser() me: AuthenticatedUser,
     @Args('pagination', { nullable: true }) pagination?: PaginationInput,
   ): Promise<PostConnection> {
-    return this.feedService.feed(pagination ?? { first: 20 });
+    return this.feedService.feed(me, pagination ?? { first: 20 });
   }
 
   @Query(() => [PostModel], { description: 'Anuncios fijados, para mostrar arriba del feed.' })
-  async pinnedAnnouncements(): Promise<PostModel[]> {
+  async pinnedAnnouncements(@CurrentUser() me: AuthenticatedUser): Promise<PostModel[]> {
     const rows = await this.feedService.pinnedAnnouncements();
-    return rows.map(toPostModel);
+    return rows.map((post) => toPostModel(post, me));
   }
 
   @Query(() => FeedPermissionsModel)
@@ -54,7 +55,7 @@ export class FeedResolver {
     @Args('input') input: CreatePostInput,
     @CurrentUser() me: AuthenticatedUser,
   ): Promise<PostModel> {
-    return toPostModel(await this.feedService.createPost(me, input));
+    return toPostModel(await this.feedService.createPost(me, input), me);
   }
 
   // Autor o pastor (validado en el service).
@@ -63,7 +64,7 @@ export class FeedResolver {
     @Args('id', { type: () => ID }) id: string,
     @CurrentUser() me: AuthenticatedUser,
   ): Promise<PostModel> {
-    return toPostModel(await this.feedService.deletePost(me, id));
+    return toPostModel(await this.feedService.deletePost(me, id), me);
   }
 
   @RequirePastor()
@@ -71,8 +72,9 @@ export class FeedResolver {
   async setPostPinned(
     @Args('id', { type: () => ID }) id: string,
     @Args('pinned') pinned: boolean,
+    @CurrentUser() me: AuthenticatedUser,
   ): Promise<PostModel> {
-    return toPostModel(await this.feedService.setPinned(id, pinned));
+    return toPostModel(await this.feedService.setPinned(id, pinned), me);
   }
 
   @Mutation(() => PostModel, { description: 'Crea o reemplaza mi reacción al post.' })
@@ -81,7 +83,7 @@ export class FeedResolver {
     @Args('type', { type: () => ReactionType }) type: ReactionType,
     @CurrentUser() me: AuthenticatedUser,
   ): Promise<PostModel> {
-    return toPostModel(await this.feedService.react(me, postId, type));
+    return toPostModel(await this.feedService.react(me, postId, type), me);
   }
 
   @Mutation(() => PostModel)
@@ -89,7 +91,7 @@ export class FeedResolver {
     @Args('postId', { type: () => ID }) postId: string,
     @CurrentUser() me: AuthenticatedUser,
   ): Promise<PostModel> {
-    return toPostModel(await this.feedService.removeReaction(me, postId));
+    return toPostModel(await this.feedService.removeReaction(me, postId), me);
   }
 
   @Mutation(() => PostCommentModel)

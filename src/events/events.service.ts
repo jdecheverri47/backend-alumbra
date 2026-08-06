@@ -1,8 +1,10 @@
 import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import { Event } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuthenticatedUser } from '../auth/types/authenticated-user';
 import { createEventSchema, updateEventSchema } from './dto/inputs.schema';
 import { EventRow } from './dto/to-event-model';
+import { canSeeMembersOnly } from './event-visibility';
 
 const EVENT_INCLUDE = { createdBy: true, group: { include: { leader: true } } } as const;
 
@@ -54,11 +56,15 @@ export class EventsService {
   /**
    * El calendario es agenda personal: eventos generales más los de grupos que
    * el usuario dicta o a los que asiste (también para pastores).
+   *
+   * Los eventos marcados `membersOnly` solo los ven miembros y pastores; para
+   * un asistente es como si no existieran.
    */
   async listVisible(me: AuthenticatedUser, from: Date, to: Date): Promise<EventRow[]> {
     return this.prisma.event.findMany({
       where: {
         startsAt: { gte: from, lte: to },
+        ...(canSeeMembersOnly(me) ? {} : { membersOnly: false }),
         OR: [
           { groupId: null },
           { group: { leaderId: me.sub } },
@@ -67,6 +73,27 @@ export class EventsService {
       },
       include: EVENT_INCLUDE,
       orderBy: { startsAt: 'asc' },
+    });
+  }
+
+  /**
+   * Eventos anunciados sin fecha todavía ("bautizos, fecha por confirmar"). El
+   * calendario filtra por rango, así que estos nunca saldrían ahí: van aparte.
+   * Misma regla de visibilidad que `listVisible`.
+   */
+  async listUndated(me: AuthenticatedUser): Promise<EventRow[]> {
+    return this.prisma.event.findMany({
+      where: {
+        startsAt: null,
+        ...(canSeeMembersOnly(me) ? {} : { membersOnly: false }),
+        OR: [
+          { groupId: null },
+          { group: { leaderId: me.sub } },
+          { group: { memberships: { some: { userId: me.sub, leftAt: null } } } },
+        ],
+      },
+      include: EVENT_INCLUDE,
+      orderBy: { createdAt: 'desc' },
     });
   }
 
@@ -81,4 +108,30 @@ export class EventsService {
     }
     return event;
   }
+
+  /**
+   * Los eventos que puede leer cualquiera desde el sitio web, sin sesión.
+   *
+   * Tres filtros, y los tres importan:
+   *   - `membersOnly: false` — la marca que ya usaba `listVisible` para los
+   *     asistentes; aquí es innegociable porque no hay usuario que evaluar.
+   *   - `groupId: null` — un evento de grupo es interno por naturaleza aunque
+   *     nadie lo marcara como de miembros. La web anuncia lo general.
+   *   - `startsAt` con fecha y dentro del rango — sin fecha no se publica.
+   *
+   * No lleva `include`: quien llama recibe `PublicEventModel`, que es sólo
+   * escalares. Traer el `createdBy` o el `group` sería cargar a memoria datos
+   * que no deben salir de aquí.
+   */
+  async listPublic(from: Date, to: Date): Promise<Event[]> {
+    return this.prisma.event.findMany({
+      where: {
+        membersOnly: false,
+        groupId: null,
+        startsAt: { gte: from, lte: to },
+      },
+      orderBy: { startsAt: 'asc' },
+    });
+  }
+
 }

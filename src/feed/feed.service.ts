@@ -65,7 +65,7 @@ export class FeedService {
     });
   }
 
-  async feed(page: PaginationInput): Promise<PostConnection> {
+  async feed(me: AuthenticatedUser, page: PaginationInput): Promise<PostConnection> {
     const first = Math.max(1, Math.min(50, page.first ?? 20));
     const rows = await this.prisma.post.findMany({
       where: { deletedAt: null },
@@ -78,7 +78,7 @@ export class FeedService {
     const hasNextPage = rows.length > first;
     const slice = rows.slice(0, first);
     return {
-      edges: slice.map((post) => ({ node: toPostModel(post), cursor: encodeCursor(post.id) })),
+      edges: slice.map((post) => ({ node: toPostModel(post, me), cursor: encodeCursor(post.id) })),
       pageInfo: {
         hasNextPage,
         endCursor: slice.length ? encodeCursor(slice[slice.length - 1].id) : null,

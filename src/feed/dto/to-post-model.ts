@@ -1,5 +1,7 @@
 import { Event, Group, Post, PostComment, PostImage, User } from '@prisma/client';
+import { AuthenticatedUser } from '../../auth/types/authenticated-user';
 import { toEventModel } from '../../events/dto/to-event-model';
+import { canSeeMembersOnly } from '../../events/event-visibility';
 import { toUserModel } from '../../users/dto/to-user-model';
 import { PostCommentModel, PostModel } from './post.model';
 
@@ -15,13 +17,19 @@ export const POST_INCLUDE = {
   event: { include: { createdBy: true, group: { include: { leader: true } } } },
 };
 
-export function toPostModel(post: PostRow): PostModel {
+/**
+ * `viewer` es obligatorio a propósito: un post puede colgar de un evento de
+ * miembros, y sin saber quién mira no se puede decidir si mostrarlo.
+ */
+export function toPostModel(post: PostRow, viewer: AuthenticatedUser): PostModel {
+  const event = post.event?.membersOnly && !canSeeMembersOnly(viewer) ? null : post.event;
+
   return {
     id: post.id,
     type: post.type,
     body: post.body,
     author: toUserModel(post.author),
-    event: post.event ? toEventModel(post.event) : null,
+    event: event ? toEventModel(event) : null,
     images: post.images.map((i) => ({ id: i.id, url: i.url, position: i.position })),
     pinnedAt: post.pinnedAt,
     createdAt: post.createdAt,

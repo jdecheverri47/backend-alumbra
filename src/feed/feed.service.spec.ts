@@ -87,7 +87,7 @@ describe('FeedService', () => {
         imageUrls: ['/uploads/a.jpg', '/uploads/b.jpg'],
       });
 
-      const page = await service.feed({ first: 10 });
+      const page = await service.feed(asAuth(miembro), { first: 10 });
       expect(page.edges).toHaveLength(1);
       expect(page.edges[0].node.images.map((i) => i.url)).toEqual([
         '/uploads/a.jpg',
@@ -113,7 +113,7 @@ describe('FeedService', () => {
 
       await service.deletePost(asAuth(pastor), anuncio.id);
       expect(await service.pinnedAnnouncements()).toHaveLength(0);
-      const page = await service.feed({ first: 10 });
+      const page = await service.feed(asAuth(miembro), { first: 10 });
       expect(page.edges.map((e) => e.node.id)).toEqual([post.id]);
     });
 

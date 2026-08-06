@@ -16,14 +16,17 @@ export class EventModel {
   @Field(() => String, { nullable: true })
   location?: string | null;
 
-  @Field(() => Date)
-  startsAt!: Date;
+  @Field(() => Date, { nullable: true, description: 'null = fecha por definir.' })
+  startsAt?: Date | null;
 
   @Field(() => Date, { nullable: true })
   endsAt?: Date | null;
 
   @Field(() => GroupModel, { nullable: true, description: 'null = evento general.' })
   group?: GroupModel | null;
+
+  @Field(() => Boolean, { description: 'true = solo para miembros; no se muestra a asistentes.' })
+  membersOnly!: boolean;
 
   @Field(() => UserModel)
   createdBy!: UserModel;

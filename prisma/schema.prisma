@@ -435,11 +435,14 @@ model Event {
   title       String
   description String?
   location    String?
-  startsAt    DateTime
+  // null = fecha por definir; no sale en el calendario, sino en la lista aparte.
+  startsAt    DateTime?
   endsAt      DateTime?
   // null = general event, visible to everyone
   groupId     String?
   createdById String
+  // true = solo lo ven miembros (y pastores); no aparece para asistentes.
+  membersOnly Boolean   @default(false)
 
   group     Group? @relation(fields: [groupId], references: [id])
   createdBy User   @relation(fields: [createdById], references: [id])

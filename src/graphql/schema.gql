@@ -118,7 +118,12 @@ input CreateEventInput {
   """null = evento general (solo pastores)."""
   groupId: ID
   location: String
-  startsAt: DateTime!
+
+  """true = solo para miembros; no se muestra a asistentes."""
+  membersOnly: Boolean = false
+
+  """null = fecha por definir."""
+  startsAt: DateTime
   title: String!
 }
 
@@ -205,7 +210,12 @@ type Event {
   group: Group
   id: ID!
   location: String
-  startsAt: DateTime!
+
+  """true = solo para miembros; no se muestra a asistentes."""
+  membersOnly: Boolean!
+
+  """null = fecha por definir."""
+  startsAt: DateTime
   title: String!
 }
 
@@ -599,6 +609,9 @@ type Query {
   Cohortes de la Ruta con su estado. Pastores: todas; líderes: las suyas.
   """
   rutaCohorts: [RutaCohortOverview!]!
+
+  """Eventos anunciados sin fecha definida, visibles para mí."""
+  undatedEvents: [Event!]!
   user(id: ID!): User
   users(filter: UserFilterInput, pagination: PaginationInput): UserConnection!
 }
@@ -731,6 +744,11 @@ input UpdateEventInput {
   description: String
   endsAt: DateTime
   location: String
+
+  """true = solo para miembros; no se muestra a asistentes."""
+  membersOnly: Boolean
+
+  """null = quitar la fecha (queda por definir)."""
   startsAt: DateTime
   title: String
 }

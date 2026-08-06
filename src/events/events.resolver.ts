@@ -21,6 +21,14 @@ export class EventsResolver {
     return rows.map(toEventModel);
   }
 
+  @Query(() => [EventModel], {
+    description: 'Eventos anunciados sin fecha definida, visibles para mí.',
+  })
+  async undatedEvents(@CurrentUser() me: AuthenticatedUser): Promise<EventModel[]> {
+    const rows = await this.eventsService.listUndated(me);
+    return rows.map(toEventModel);
+  }
+
   // General: solo pastores. De grupo: pastor o líder del grupo (validado en el service).
   @Mutation(() => EventModel)
   async createEvent(

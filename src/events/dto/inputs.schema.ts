@@ -5,11 +5,17 @@ export const createEventSchema = z
     title: z.string().trim().min(2).max(160),
     description: z.string().trim().max(2000).optional(),
     location: z.string().trim().max(200).optional(),
-    startsAt: z.coerce.date(),
+    // Opcional: un evento puede existir con la fecha por definir.
+    startsAt: z.coerce.date().optional(),
     endsAt: z.coerce.date().optional(),
     groupId: z.string().trim().min(1).optional(),
+    membersOnly: z.boolean().optional(),
   })
-  .refine((d) => !d.endsAt || d.endsAt > d.startsAt, {
+  .refine((d) => !d.endsAt || d.startsAt, {
+    message: 'endsAt requires startsAt',
+    path: ['endsAt'],
+  })
+  .refine((d) => !d.endsAt || !d.startsAt || d.endsAt > d.startsAt, {
     message: 'endsAt must be after startsAt',
     path: ['endsAt'],
   });
@@ -19,8 +25,10 @@ export const updateEventSchema = z
     title: z.string().trim().min(2).max(160).optional(),
     description: z.string().trim().max(2000).nullable().optional(),
     location: z.string().trim().max(200).nullable().optional(),
-    startsAt: z.coerce.date().optional(),
+    // nullable: permite quitarle la fecha a un evento, o ponérsela cuando se confirma.
+    startsAt: z.coerce.date().nullable().optional(),
     endsAt: z.coerce.date().nullable().optional(),
+    membersOnly: z.boolean().optional(),
   })
   .refine((d) => !d.endsAt || !d.startsAt || d.endsAt > d.startsAt, {
     message: 'endsAt must be after startsAt',
