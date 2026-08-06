@@ -531,6 +531,19 @@ enum PostType {
   POST
 }
 
+type PublicEvent {
+  description: String
+  endsAt: DateTime
+  id: ID!
+  location: String
+
+  """
+  Los públicos siempre llevan fecha; los que no la tienen no se publican.
+  """
+  startsAt: DateTime!
+  title: String!
+}
+
 type Query {
   """Placeholder until the first real queries ship."""
   apiVersion: String!
@@ -604,6 +617,11 @@ type Query {
 
   """Comentarios de un post, más antiguo primero."""
   postComments(postId: ID!): [PostComment!]!
+
+  """
+  Eventos generales publicables en el rango [from, to]. No requiere sesión.
+  """
+  publicEvents(from: DateTime!, to: DateTime!): [PublicEvent!]!
 
   """
   Cohortes de la Ruta con su estado. Pastores: todas; líderes: las suyas.

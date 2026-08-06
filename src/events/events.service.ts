@@ -133,5 +133,4 @@ export class EventsService {
       orderBy: { startsAt: 'asc' },
     });
   }
-
 }

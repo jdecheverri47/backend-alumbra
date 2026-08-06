@@ -160,6 +160,61 @@ describe('EventsService', () => {
     });
   });
 
+  describe('listPublic', () => {
+    it('publica los eventos generales con fecha', async () => {
+      await createEvent('Culto general', false);
+
+      const publicos = await service.listPublic(FROM, TO);
+
+      expect(publicos.map((e) => e.title)).toEqual(['Culto general']);
+    });
+
+    it('no publica los de miembros', async () => {
+      await createEvent('Reunión de miembros', true);
+
+      expect(await service.listPublic(FROM, TO)).toHaveLength(0);
+    });
+
+    it('no publica los de grupo, aunque no sean de miembros', async () => {
+      const lider = await prisma.user.create({
+        data: { email: 'lider@x.com', firstName: 'L', lastName: 'X', baseRole: 'MIEMBRO' },
+      });
+      const grupo = await prisma.group.create({
+        data: { type: 'CONEXION', name: 'Conexión 1', leaderId: lider.id },
+      });
+      await prisma.event.create({
+        data: {
+          title: 'Reunión de la conexión',
+          startsAt: new Date('2026-08-30T15:00:00Z'),
+          membersOnly: false,
+          groupId: grupo.id,
+          createdById: pastor.id,
+        },
+      });
+
+      expect(await service.listPublic(FROM, TO)).toHaveLength(0);
+    });
+
+    it('no publica los que no tienen fecha', async () => {
+      await prisma.event.create({
+        data: { title: 'Bautizos', startsAt: null, membersOnly: false, createdById: pastor.id },
+      });
+
+      expect(await service.listPublic(FROM, TO)).toHaveLength(0);
+    });
+
+    it('respeta el rango pedido', async () => {
+      await createEvent('Culto de agosto', false);
+
+      const fuera = await service.listPublic(
+        new Date('2026-10-01T00:00:00Z'),
+        new Date('2026-10-31T23:59:59Z'),
+      );
+
+      expect(fuera).toHaveLength(0);
+    });
+  });
+
   describe('create', () => {
     it('guarda el flag membersOnly', async () => {
       const event = await service.create(asAuth(pastor), {

@@ -1,9 +1,12 @@
 import { Args, ID, Mutation, Query, Resolver } from '@nestjs/graphql';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
+import { Public } from '../auth/decorators/public.decorator';
 import { AuthenticatedUser } from '../auth/types/authenticated-user';
 import { CreateEventInput } from './dto/create-event.input';
 import { EventModel } from './dto/event.model';
+import { PublicEventModel } from './dto/public-event.model';
 import { toEventModel } from './dto/to-event-model';
+import { PublicEventRow, toPublicEventModel } from './dto/to-public-event-model';
 import { UpdateEventInput } from './dto/update-event.input';
 import { EventsService } from './events.service';
 
@@ -19,6 +22,24 @@ export class EventsResolver {
   ): Promise<EventModel[]> {
     const rows = await this.eventsService.listVisible(me, from, to);
     return rows.map(toEventModel);
+  }
+
+  /**
+   * Sin sesión: es la cartelera del sitio web. Devuelve `PublicEvent`, que solo
+   * tiene escalares — ver la nota en public-event.model.ts.
+   */
+  @Public()
+  @Query(() => [PublicEventModel], {
+    description: 'Eventos generales publicables en el rango [from, to]. No requiere sesión.',
+  })
+  async publicEvents(
+    @Args('from', { type: () => Date }) from: Date,
+    @Args('to', { type: () => Date }) to: Date,
+  ): Promise<PublicEventModel[]> {
+    const rows = await this.eventsService.listPublic(from, to);
+    return rows
+      .filter((event): event is PublicEventRow => event.startsAt !== null)
+      .map(toPublicEventModel);
   }
 
   @Query(() => [EventModel], {
