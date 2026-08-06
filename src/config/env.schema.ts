@@ -11,8 +11,24 @@ const envSchema = z.object({
     .default('15m'),
   REFRESH_TTL_DAYS: z.coerce.number().int().positive().default(30),
   COOKIE_DOMAIN: z.string().optional(),
-  CORS_ORIGIN: z.string().url().default('http://localhost:3000'),
+  // Uno o varios orígenes separados por comas: el sitio se sirve en el dominio
+  // apex y en www, y son orígenes distintos para el navegador.
+  CORS_ORIGIN: z
+    .string()
+    .default('http://localhost:3000')
+    .refine(
+      (value) => parseOrigins(value).every((o) => z.string().url().safeParse(o).success),
+      'Expected one or more URLs separated by commas',
+    ),
 });
+
+/** Divide CORS_ORIGIN en la lista de orígenes, sin espacios ni entradas vacías. */
+export function parseOrigins(value: string): string[] {
+  return value
+    .split(',')
+    .map((origin) => origin.trim())
+    .filter(Boolean);
+}
 
 export type Env = z.infer<typeof envSchema>;
 

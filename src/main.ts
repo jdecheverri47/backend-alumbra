@@ -3,13 +3,14 @@ import { NestFactory } from '@nestjs/core';
 import { Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { AppModule } from './app.module';
+import { parseOrigins } from './config/env.schema';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
   const config = app.get(ConfigService);
 
   app.enableCors({
-    origin: config.getOrThrow<string>('CORS_ORIGIN'),
+    origin: parseOrigins(config.getOrThrow<string>('CORS_ORIGIN')),
     credentials: true,
   });
 

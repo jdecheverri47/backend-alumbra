@@ -56,7 +56,13 @@ function formatGraphQLError(
     GraphQLModule.forRootAsync<ApolloDriverConfig>({
       driver: ApolloDriver,
       useFactory: () => ({
-        autoSchemaFile: join(process.cwd(), 'src/graphql/schema.gql'),
+        // En dev se escribe el SDL a src/graphql/schema.gql (versionado en el repo).
+        // En producción se genera en memoria: el contenedor no lleva src/ y su
+        // filesystem es efímero, así que escribirlo fallaría y no serviría de nada.
+        autoSchemaFile:
+          process.env.NODE_ENV === 'production'
+            ? true
+            : join(process.cwd(), 'src/graphql/schema.gql'),
         sortSchema: true,
         playground: false,
         introspection: process.env.NODE_ENV !== 'production',

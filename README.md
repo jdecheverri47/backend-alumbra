@@ -55,9 +55,24 @@ Debe devolver una cadena como `"0.0.1"`.
 | `pnpm prisma:studio` | Abre Prisma Studio. |
 | `pnpm prisma:seed` | Ejecuta el seed. |
 
+## Despliegue (Cloud Run + Cloud SQL)
+
+Pasos completos en [`docs/deploy-gcp.md`](docs/deploy-gcp.md). Una vez hecho el
+setup inicial:
+
+```bash
+./scripts/migrate-prod.sh   # solo si hay migraciones nuevas
+./scripts/deploy.sh
+```
+
+Ojo con dos cosas antes de abrirlo a usuarios reales: los archivos subidos se
+guardan en disco local y Cloud Run lo borra en cada despliegue, y la cookie de
+refresh exige que front y back compartan dominio. Ambas están explicadas en el
+doc.
+
 ## Cloud SQL Proxy (dev)
 
-Cuando esté definida la infra en GCP, correr algo así:
+Para trabajar contra la base remota en vez de un Postgres local:
 
 ```bash
 cloud-sql-proxy --port 5432 <PROJECT:REGION:INSTANCE>
@@ -68,8 +83,6 @@ Y en `.env`:
 ```
 DATABASE_URL=postgresql://<user>:<password>@localhost:5432/alumbra?schema=public
 ```
-
-(El instance connection name se documentará cuando exista Pulumi.)
 
 ## Auth (credenciales)
 
