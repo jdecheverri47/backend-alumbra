@@ -2,13 +2,12 @@ import { Event } from '@prisma/client';
 import { PublicEventModel } from './public-event.model';
 
 /**
- * Un evento publicable. `listPublic` filtra por rango de fechas, así que los
- * que no tienen fecha quedan fuera solos; el tipo lo deja explícito para no
- * tener que asertar en el mapper.
+ * Sirve tanto a los eventos con fecha como a los que aún no la tienen: el
+ * `startsAt` viaja como venga y es la propia consulta la que decide cuáles
+ * devuelve. Copia campo por campo a propósito — así, si alguien agrega una
+ * relación al modelo de Prisma, no se cuela sola en la respuesta pública.
  */
-export type PublicEventRow = Event & { startsAt: Date };
-
-export function toPublicEventModel(event: PublicEventRow): PublicEventModel {
+export function toPublicEventModel(event: Event): PublicEventModel {
   return {
     id: event.id,
     title: event.title,

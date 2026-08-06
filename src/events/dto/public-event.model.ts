@@ -27,9 +27,10 @@ export class PublicEventModel {
   location?: string | null;
 
   @Field(() => Date, {
-    description: 'Los públicos siempre llevan fecha; los que no la tienen no se publican.',
+    nullable: true,
+    description: 'null = fecha por confirmar. Solo lo devuelve publicUndatedEvents.',
   })
-  startsAt!: Date;
+  startsAt?: Date | null;
 
   @Field(() => Date, { nullable: true })
   endsAt?: Date | null;

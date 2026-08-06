@@ -133,4 +133,25 @@ export class EventsService {
       orderBy: { startsAt: 'asc' },
     });
   }
+
+  /**
+   * Los publicables que todavía no tienen fecha ("bautizos, fecha por
+   * confirmar"). Van aparte porque `listPublic` filtra por rango y un `null`
+   * nunca cae dentro de uno.
+   *
+   * Mismos dos filtros de siempre —`membersOnly: false` y `groupId: null`— y sin
+   * `include`, por la misma razón. Aquí no hay rango que acotar el resultado, así
+   * que quien llama recibe todos: la lista se mantiene corta porque un evento
+   * deja de estar sin fecha en cuanto se le pone una.
+   */
+  async listPublicUndated(): Promise<Event[]> {
+    return this.prisma.event.findMany({
+      where: {
+        membersOnly: false,
+        groupId: null,
+        startsAt: null,
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+  }
 }

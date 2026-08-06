@@ -537,10 +537,8 @@ type PublicEvent {
   id: ID!
   location: String
 
-  """
-  Los públicos siempre llevan fecha; los que no la tienen no se publican.
-  """
-  startsAt: DateTime!
+  """null = fecha por confirmar. Solo lo devuelve publicUndatedEvents."""
+  startsAt: DateTime
   title: String!
 }
 
@@ -622,6 +620,9 @@ type Query {
   Eventos generales publicables en el rango [from, to]. No requiere sesión.
   """
   publicEvents(from: DateTime!, to: DateTime!): [PublicEvent!]!
+
+  """Eventos generales publicables sin fecha definida. No requiere sesión."""
+  publicUndatedEvents: [PublicEvent!]!
 
   """
   Cohortes de la Ruta con su estado. Pastores: todas; líderes: las suyas.

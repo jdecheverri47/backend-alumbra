@@ -6,7 +6,7 @@ import { CreateEventInput } from './dto/create-event.input';
 import { EventModel } from './dto/event.model';
 import { PublicEventModel } from './dto/public-event.model';
 import { toEventModel } from './dto/to-event-model';
-import { PublicEventRow, toPublicEventModel } from './dto/to-public-event-model';
+import { toPublicEventModel } from './dto/to-public-event-model';
 import { UpdateEventInput } from './dto/update-event.input';
 import { EventsService } from './events.service';
 
@@ -37,9 +37,20 @@ export class EventsResolver {
     @Args('to', { type: () => Date }) to: Date,
   ): Promise<PublicEventModel[]> {
     const rows = await this.eventsService.listPublic(from, to);
-    return rows
-      .filter((event): event is PublicEventRow => event.startsAt !== null)
-      .map(toPublicEventModel);
+    return rows.map(toPublicEventModel);
+  }
+
+  /**
+   * La otra mitad de la cartelera: lo anunciado sin fecha ("bautizos, fecha por
+   * confirmar"). Va en una consulta aparte porque no tiene rango que pedirle.
+   */
+  @Public()
+  @Query(() => [PublicEventModel], {
+    description: 'Eventos generales publicables sin fecha definida. No requiere sesión.',
+  })
+  async publicUndatedEvents(): Promise<PublicEventModel[]> {
+    const rows = await this.eventsService.listPublicUndated();
+    return rows.map(toPublicEventModel);
   }
 
   @Query(() => [EventModel], {

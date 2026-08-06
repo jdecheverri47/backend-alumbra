@@ -203,6 +203,55 @@ describe('EventsService', () => {
       expect(await service.listPublic(FROM, TO)).toHaveLength(0);
     });
 
+    it('los sin fecha salen por listPublicUndated, no por listPublic', async () => {
+      await prisma.event.create({
+        data: { title: 'Bautizos', startsAt: null, membersOnly: false, createdById: pastor.id },
+      });
+      await createEvent('Culto general', false);
+
+      expect((await service.listPublic(FROM, TO)).map((e) => e.title)).toEqual(['Culto general']);
+      expect((await service.listPublicUndated()).map((e) => e.title)).toEqual(['Bautizos']);
+    });
+
+    it('listPublicUndated no publica los de miembros ni los de grupo', async () => {
+      const lider = await prisma.user.create({
+        data: { email: 'lider2@x.com', firstName: 'L', lastName: 'Y', baseRole: 'MIEMBRO' },
+      });
+      const grupo = await prisma.group.create({
+        data: { type: 'CONEXION', name: 'Conexión 2', leaderId: lider.id },
+      });
+      await prisma.event.create({
+        data: {
+          title: 'Retiro de miembros',
+          startsAt: null,
+          membersOnly: true,
+          createdById: pastor.id,
+        },
+      });
+      await prisma.event.create({
+        data: {
+          title: 'Salida de la conexión',
+          startsAt: null,
+          membersOnly: false,
+          groupId: grupo.id,
+          createdById: pastor.id,
+        },
+      });
+
+      expect(await service.listPublicUndated()).toHaveLength(0);
+    });
+
+    it('un evento deja la lista sin fecha en cuanto se le pone una', async () => {
+      const evento = await prisma.event.create({
+        data: { title: 'Bautizos', startsAt: null, membersOnly: false, createdById: pastor.id },
+      });
+
+      await service.updateById(asAuth(pastor), evento.id, { startsAt: '2026-09-13T15:00:00Z' });
+
+      expect(await service.listPublicUndated()).toHaveLength(0);
+      expect((await service.listPublic(FROM, TO)).map((e) => e.title)).toEqual(['Bautizos']);
+    });
+
     it('respeta el rango pedido', async () => {
       await createEvent('Culto de agosto', false);
 
