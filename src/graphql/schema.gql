@@ -117,6 +117,9 @@ input CreateEventInput {
 
   """null = evento general (solo pastores)."""
   groupId: ID
+
+  """Afiche del evento: ruta /uploads/... o URL http(s)."""
+  imageUrl: String
   location: String
 
   """true = solo para miembros; no se muestra a asistentes."""
@@ -209,6 +212,9 @@ type Event {
   """null = evento general."""
   group: Group
   id: ID!
+
+  """Afiche del evento."""
+  imageUrl: String
   location: String
 
   """true = solo para miembros; no se muestra a asistentes."""
@@ -535,6 +541,9 @@ type PublicEvent {
   description: String
   endsAt: DateTime
   id: ID!
+
+  """Afiche del evento."""
+  imageUrl: String
   location: String
 
   """null = fecha por confirmar. Solo lo devuelve publicUndatedEvents."""
@@ -762,6 +771,9 @@ input SubmitFinalWorkInput {
 input UpdateEventInput {
   description: String
   endsAt: DateTime
+
+  """null = quitar el afiche."""
+  imageUrl: String
   location: String
 
   """true = solo para miembros; no se muestra a asistentes."""

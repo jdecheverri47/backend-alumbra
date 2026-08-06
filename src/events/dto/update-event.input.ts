@@ -11,6 +11,9 @@ export class UpdateEventInput {
   @Field(() => String, { nullable: true })
   location?: string | null;
 
+  @Field(() => String, { nullable: true, description: 'null = quitar el afiche.' })
+  imageUrl?: string | null;
+
   @Field(() => Date, { nullable: true, description: 'null = quitar la fecha (queda por definir).' })
   startsAt?: Date | null;
 

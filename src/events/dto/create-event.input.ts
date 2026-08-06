@@ -11,6 +11,12 @@ export class CreateEventInput {
   @Field(() => String, { nullable: true })
   location?: string;
 
+  @Field(() => String, {
+    nullable: true,
+    description: 'Afiche del evento: ruta /uploads/... o URL http(s).',
+  })
+  imageUrl?: string;
+
   @Field(() => Date, { nullable: true, description: 'null = fecha por definir.' })
   startsAt?: Date;
 

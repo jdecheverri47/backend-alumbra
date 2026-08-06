@@ -13,6 +13,7 @@ export function toPublicEventModel(event: Event): PublicEventModel {
     title: event.title,
     description: event.description,
     location: event.location,
+    imageUrl: event.imageUrl,
     startsAt: event.startsAt,
     endsAt: event.endsAt,
   };

@@ -435,6 +435,8 @@ model Event {
   title       String
   description String?
   location    String?
+  // Afiche del evento: ruta /uploads/... o URL http(s).
+  imageUrl    String?
   // null = fecha por definir; no sale en el calendario, sino en la lista aparte.
   startsAt    DateTime?
   endsAt      DateTime?

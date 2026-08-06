@@ -11,6 +11,7 @@ export function toEventModel(event: EventRow): EventModel {
     title: event.title,
     description: event.description,
     location: event.location,
+    imageUrl: event.imageUrl,
     startsAt: event.startsAt,
     endsAt: event.endsAt,
     group: event.group ? toGroupModel(event.group) : null,

@@ -16,6 +16,9 @@ export class EventModel {
   @Field(() => String, { nullable: true })
   location?: string | null;
 
+  @Field(() => String, { nullable: true, description: 'Afiche del evento.' })
+  imageUrl?: string | null;
+
   @Field(() => Date, { nullable: true, description: 'null = fecha por definir.' })
   startsAt?: Date | null;
 

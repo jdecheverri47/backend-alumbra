@@ -284,6 +284,45 @@ describe('EventsService', () => {
       expect(event.membersOnly).toBe(false);
     });
 
+    it('guarda el afiche', async () => {
+      const event = await service.create(asAuth(pastor), {
+        title: 'Presentación de niños',
+        startsAt: '2026-08-30T15:00:00Z',
+        imageUrl: '/uploads/afiche.jpg',
+      });
+
+      expect(event.imageUrl).toBe('/uploads/afiche.jpg');
+    });
+
+    it('acepta una URL http(s) como afiche', async () => {
+      const event = await service.create(asAuth(pastor), {
+        title: 'Culto',
+        startsAt: '2026-08-30T15:00:00Z',
+        imageUrl: 'https://cdn.example.com/afiche.png',
+      });
+
+      expect(event.imageUrl).toBe('https://cdn.example.com/afiche.png');
+    });
+
+    it('rechaza un afiche que no sea ruta subida ni http(s)', async () => {
+      await expect(
+        service.create(asAuth(pastor), {
+          title: 'Culto',
+          startsAt: '2026-08-30T15:00:00Z',
+          imageUrl: 'javascript:alert(1)',
+        }),
+      ).rejects.toThrow(/uploads|http/i);
+    });
+
+    it('sin afiche queda en null', async () => {
+      const event = await service.create(asAuth(pastor), {
+        title: 'Culto',
+        startsAt: '2026-08-30T15:00:00Z',
+      });
+
+      expect(event.imageUrl).toBeNull();
+    });
+
     it('acepta un evento sin fecha', async () => {
       const event = await service.create(asAuth(pastor), { title: 'Bautizos' });
 

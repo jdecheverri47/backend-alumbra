@@ -26,6 +26,9 @@ export class PublicEventModel {
   @Field(() => String, { nullable: true })
   location?: string | null;
 
+  @Field(() => String, { nullable: true, description: 'Afiche del evento.' })
+  imageUrl?: string | null;
+
   @Field(() => Date, {
     nullable: true,
     description: 'null = fecha por confirmar. Solo lo devuelve publicUndatedEvents.',
