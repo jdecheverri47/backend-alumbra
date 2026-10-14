@@ -46,6 +46,12 @@ enum ReactionType {
   LOVE
 }
 
+enum AccessRequestStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
 enum GroupSessionStatus {
   PROGRAMADA
   REPROGRAMADA
@@ -70,35 +76,37 @@ model User {
   phone     String?
   photoUrl  String?
   coverUrl  String?
-  googleId  String?  @unique
+  googleId  String?   @unique
   birthDate DateTime?
 
   // Registros de membresía (los administra un pastor).
   membershipDate DateTime?
   baptismDate    DateTime?
 
-  ministryMemberships MinistryMembership[]
-  sessions            Session[]
-  ledGroups           Group[]              @relation("GroupLeader")
-  groupMemberships    GroupMembership[]    @relation("GroupMember")
-  addedGroupMembers   GroupMembership[]    @relation("GroupMemberAddedBy")
-  createdEvents       Event[]
-  posts               Post[]
-  postReactions       PostReaction[]
-  postComments        PostComment[]
-  createdSessions     GroupSession[]         @relation("GroupSessionCreator")
-  uploadedMaterials   SessionMaterial[]      @relation("MaterialUploader")
-  submissions         AssignmentSubmission[] @relation("Submitter")
-  attendances         SessionAttendance[]    @relation("Attendee")
-  recordedAttendances SessionAttendance[]    @relation("AttendanceRecorder")
-  courseCompletions   CourseCompletion[]     @relation("CompletionUser")
-  certifiedCompletions CourseCompletion[]    @relation("CompletionCertifier")
-  courseEnrollments   CourseEnrollment[]     @relation("EnrollmentUser")
-  placedEnrollments   CourseEnrollment[]     @relation("EnrollmentPlacer")
-  membershipJourney   MembershipJourney?     @relation("JourneyUser")
-  interviewedJourneys MembershipJourney[]    @relation("JourneyInterviewer")
-  assignedJourneys    MembershipJourney[]    @relation("JourneyAssignedLeader")
-  churchObservations  ChurchObservation[]
+  ministryMemberships    MinistryMembership[]
+  sessions               Session[]
+  ledGroups              Group[]                @relation("GroupLeader")
+  groupMemberships       GroupMembership[]      @relation("GroupMember")
+  addedGroupMembers      GroupMembership[]      @relation("GroupMemberAddedBy")
+  createdEvents          Event[]
+  posts                  Post[]
+  postReactions          PostReaction[]
+  postComments           PostComment[]
+  createdSessions        GroupSession[]         @relation("GroupSessionCreator")
+  uploadedMaterials      SessionMaterial[]      @relation("MaterialUploader")
+  submissions            AssignmentSubmission[] @relation("Submitter")
+  attendances            SessionAttendance[]    @relation("Attendee")
+  recordedAttendances    SessionAttendance[]    @relation("AttendanceRecorder")
+  courseCompletions      CourseCompletion[]     @relation("CompletionUser")
+  certifiedCompletions   CourseCompletion[]     @relation("CompletionCertifier")
+  courseEnrollments      CourseEnrollment[]     @relation("EnrollmentUser")
+  placedEnrollments      CourseEnrollment[]     @relation("EnrollmentPlacer")
+  membershipJourney      MembershipJourney?     @relation("JourneyUser")
+  interviewedJourneys    MembershipJourney[]    @relation("JourneyInterviewer")
+  assignedJourneys       MembershipJourney[]    @relation("JourneyAssignedLeader")
+  churchObservations     ChurchObservation[]
+  accessRequest          AccessRequest?         @relation("AccessRequestUser")
+  reviewedAccessRequests AccessRequest[]        @relation("AccessRequestReviewer")
 
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
@@ -123,9 +131,36 @@ model Session {
   @@index([expiresAt])
 }
 
+// Alguien entró con Google y la iglesia todavía no le ha dado acceso. Lo
+// revisan pastores y líderes de Acogida: aprobar crea (o habilita) el User.
+model AccessRequest {
+  id        String              @id @default(cuid())
+  email     String              @unique
+  googleId  String              @unique
+  firstName String
+  lastName  String
+  photoUrl  String?
+  phone     String?
+  note      String?
+  status    AccessRequestStatus @default(PENDING)
+
+  // Si el correo ya era de un User (p. ej. importado sin acceso), se enlaza aquí
+  // desde el principio; si no, al aprobar.
+  userId       String?   @unique
+  user         User?     @relation("AccessRequestUser", fields: [userId], references: [id])
+  reviewedById String?
+  reviewedBy   User?     @relation("AccessRequestReviewer", fields: [reviewedById], references: [id])
+  reviewedAt   DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([status])
+}
+
 model Ministry {
-  id          String   @id @default(cuid())
-  slug        String   @unique
+  id          String  @id @default(cuid())
+  slug        String  @unique
   name        String
   description String?
 
@@ -165,8 +200,8 @@ model Group {
   meetingTime String? // "19:00"
   location    String?
 
-  leader      User              @relation("GroupLeader", fields: [leaderId], references: [id])
-  course      Course?           @relation(fields: [courseId], references: [id])
+  leader      User                @relation("GroupLeader", fields: [leaderId], references: [id])
+  course      Course?             @relation(fields: [courseId], references: [id])
   memberships GroupMembership[]
   events      Event[]
   sessions    GroupSession[]
@@ -211,9 +246,9 @@ model GroupSession {
   // Clase del currículo que implementa esta sesión (cohortes de curso).
   lessonId     String?
 
-  group       Group                @relation(fields: [groupId], references: [id])
-  createdBy   User                 @relation("GroupSessionCreator", fields: [createdById], references: [id])
-  lesson      CourseLesson?        @relation(fields: [lessonId], references: [id])
+  group       Group               @relation(fields: [groupId], references: [id])
+  createdBy   User                @relation("GroupSessionCreator", fields: [createdById], references: [id])
+  lesson      CourseLesson?       @relation(fields: [lessonId], references: [id])
   materials   SessionMaterial[]
   assignments SessionAssignment[]
   attendances SessionAttendance[]

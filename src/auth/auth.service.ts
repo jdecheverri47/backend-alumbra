@@ -4,9 +4,12 @@ import { JwtService } from '@nestjs/jwt';
 import { User } from '@prisma/client';
 import { compare } from 'bcryptjs';
 import { createHash, randomBytes } from 'node:crypto';
+import { AccessRequestsService } from '../access-requests/access-requests.service';
 import { ttlToSeconds } from '../config/env.schema';
 import { PrismaService } from '../prisma/prisma.service';
+import { googleLoginSchema } from './dto/google-login.schema';
 import { loginSchema } from './dto/login.schema';
+import { GoogleTokenVerifier } from './google-token.verifier';
 
 export interface RequestMeta {
   userAgent?: string;
@@ -29,6 +32,8 @@ export class AuthService {
     private readonly prisma: PrismaService,
     private readonly jwtService: JwtService,
     private readonly config: ConfigService,
+    private readonly google: GoogleTokenVerifier,
+    private readonly accessRequests: AccessRequestsService,
   ) {}
 
   get refreshTtlDays(): number {
@@ -58,6 +63,60 @@ export class AuthService {
 
     const tokens = await this.issueTokens(user, meta);
     return { ...tokens, user };
+  }
+
+  /**
+   * Entrar con Google no da acceso por sí solo: solo entra quien la iglesia ya
+   * registró y habilitó (`canSignIn`). Cualquier otro queda como solicitud de
+   * acceso para que la revisen pastores o líderes de Acogida.
+   */
+  async loginWithGoogle(raw: unknown, meta: RequestMeta): Promise<IssuedTokens & { user: User }> {
+    const { credential, phone, note } = googleLoginSchema.parse(raw);
+    const identity = await this.google.verify(credential);
+
+    // Primero por googleId: si la persona cambió el correo de su cuenta de
+    // Google, sigue siendo ella.
+    const user =
+      (await this.prisma.user.findFirst({ where: { googleId: identity.googleId } })) ??
+      (await this.prisma.user.findFirst({ where: { email: identity.email } }));
+
+    if (user?.googleId && user.googleId !== identity.googleId) {
+      throw new ForbiddenException({
+        error: 'GOOGLE_ACCOUNT_MISMATCH',
+        message: 'Este correo ya está vinculado a otra cuenta de Google.',
+      });
+    }
+
+    if (user?.canSignIn) {
+      const linked =
+        user.googleId && user.photoUrl
+          ? user
+          : await this.prisma.user.update({
+              where: { id: user.id },
+              data: { googleId: identity.googleId, photoUrl: user.photoUrl ?? identity.photoUrl },
+            });
+      const tokens = await this.issueTokens(linked, meta);
+      return { ...tokens, user: linked };
+    }
+
+    const request = await this.accessRequests.recordFromGoogle(identity, user?.id ?? null, {
+      phone,
+      note,
+    });
+    if (request.status === 'REJECTED') {
+      throw new ForbiddenException({
+        error: 'ACCESS_REJECTED',
+        message: 'Tu solicitud de acceso no fue aprobada. Si crees que es un error, escríbenos.',
+      });
+    }
+    throw new ForbiddenException({
+      error: 'ACCESS_PENDING',
+      message: 'Recibimos tu solicitud. Alguien del equipo de Acogida la va a revisar.',
+      request: {
+        firstName: request.firstName,
+        hasDetails: Boolean(request.phone || request.note),
+      },
+    });
   }
 
   async refresh(refreshToken: string | undefined, meta: RequestMeta): Promise<IssuedTokens> {

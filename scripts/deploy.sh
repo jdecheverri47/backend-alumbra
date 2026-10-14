@@ -35,6 +35,9 @@ CORS_ORIGIN="${CORS_ORIGIN:-https://iglesiaalumbra.org,https://www.iglesiaalumbr
 COOKIE_DOMAIN="${COOKIE_DOMAIN:-.iglesiaalumbra.org}"
 JWT_ACCESS_TTL="${JWT_ACCESS_TTL:-15m}"
 REFRESH_TTL_DAYS="${REFRESH_TTL_DAYS:-30}"
+# OAuth Client ID (web) para "Continuar con Google". No es secreto: el frontend
+# lo publica igual. Es el cliente "Alumbra web" del proyecto alumbra-504117.
+GOOGLE_CLIENT_ID="${GOOGLE_CLIENT_ID:-1022563906083-rjdnim29f3i09lu34tnufrc9ii3u4bec.apps.googleusercontent.com}"
 
 # --- Comprobaciones ---------------------------------------------------------
 command -v gcloud >/dev/null 2>&1 || {
@@ -73,7 +76,7 @@ gcloud run deploy "${SERVICE}" \
   --service-account "${SERVICE_ACCOUNT}" \
   --add-cloudsql-instances "${SQL_CONNECTION_NAME}" \
   --set-secrets "DATABASE_URL=${SECRET_DATABASE_URL},JWT_SECRET=${SECRET_JWT}" \
-  --set-env-vars "^##^NODE_ENV=production##CORS_ORIGIN=${CORS_ORIGIN}##COOKIE_DOMAIN=${COOKIE_DOMAIN}##JWT_ACCESS_TTL=${JWT_ACCESS_TTL}##REFRESH_TTL_DAYS=${REFRESH_TTL_DAYS}" \
+  --set-env-vars "^##^NODE_ENV=production##CORS_ORIGIN=${CORS_ORIGIN}##COOKIE_DOMAIN=${COOKIE_DOMAIN}##JWT_ACCESS_TTL=${JWT_ACCESS_TTL}##REFRESH_TTL_DAYS=${REFRESH_TTL_DAYS}##GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID}" \
   --no-invoker-iam-check \
   --memory 512Mi \
   --cpu 1 \

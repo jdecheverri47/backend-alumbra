@@ -1,16 +1,45 @@
+import { UnauthorizedException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import { Test } from '@nestjs/testing';
 import { User } from '@prisma/client';
 import { hash } from 'bcryptjs';
 import { requireLocalDb } from '../../test/setup/require-local-db';
+import { AccessRequestsService } from '../access-requests/access-requests.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuthService, hashRefreshToken } from './auth.service';
+import { GoogleIdentity, GoogleTokenVerifier } from './google-token.verifier';
 
 const PASSWORD = 'super-secret-1';
 const CONFIG_STUB = {
   get: (key: string) =>
     ({ JWT_ACCESS_TTL: '15m', REFRESH_TTL_DAYS: 30 })[key as 'JWT_ACCESS_TTL' | 'REFRESH_TTL_DAYS'],
+};
+
+// El "token" de Google en los tests es la llave de este mapa: así cada caso
+// decide qué identidad devuelve Google sin hablar con Google.
+const GOOGLE_IDENTITIES: Record<string, GoogleIdentity> = {
+  ana: {
+    googleId: 'g-ana',
+    email: 'ana@alumbra.test',
+    firstName: 'Ana',
+    lastName: 'Perez',
+    photoUrl: 'https://lh3.googleusercontent.com/ana',
+  },
+  nuevo: {
+    googleId: 'g-nuevo',
+    email: 'nuevo@alumbra.test',
+    firstName: 'Nuevo',
+    lastName: 'Visitante',
+    photoUrl: null,
+  },
+};
+const GOOGLE_STUB = {
+  verify: async (credential: string) => {
+    const identity = GOOGLE_IDENTITIES[credential];
+    if (!identity) throw new UnauthorizedException({ error: 'INVALID_GOOGLE_TOKEN' });
+    return identity;
+  },
 };
 
 describe('AuthService', () => {
@@ -19,6 +48,7 @@ describe('AuthService', () => {
   let prisma: PrismaService;
 
   const wipe = async () => {
+    await prisma.$executeRawUnsafe('DELETE FROM "AccessRequest"');
     await prisma.$executeRawUnsafe('DELETE FROM "Session"');
     await prisma.$executeRawUnsafe('DELETE FROM "MinistryMembership"');
     await prisma.$executeRawUnsafe('DELETE FROM "User"');
@@ -48,6 +78,8 @@ describe('AuthService', () => {
           useValue: new JwtService({ secret: 'test-secret-of-32-characters-min!!' }),
         },
         { provide: ConfigService, useValue: CONFIG_STUB },
+        { provide: GoogleTokenVerifier, useValue: GOOGLE_STUB },
+        AccessRequestsService,
       ],
     }).compile();
 
@@ -193,6 +225,94 @@ describe('AuthService', () => {
       expect(session?.revokedAt).not.toBeNull();
 
       await expect(service.logout(undefined)).resolves.toBeUndefined();
+    });
+  });
+
+  describe('loginWithGoogle', () => {
+    it('signs in an enabled user found by email and links the Google account', async () => {
+      const user = await createUser({ passwordHash: null });
+
+      const { accessToken, user: signedIn } = await service.loginWithGoogle(
+        { credential: 'ana' },
+        {},
+      );
+
+      expect(signedIn.id).toBe(user.id);
+      const payload = await jwtService.verifyAsync<{ sub: string }>(accessToken);
+      expect(payload.sub).toBe(user.id);
+      const linked = await prisma.user.findUniqueOrThrow({ where: { id: user.id } });
+      expect(linked.googleId).toBe('g-ana');
+      expect(linked.photoUrl).toBe('https://lh3.googleusercontent.com/ana');
+    });
+
+    it('finds the user by googleId even if the Google email changed', async () => {
+      const user = await createUser({ email: 'viejo@alumbra.test', googleId: 'g-ana' });
+
+      const { user: signedIn } = await service.loginWithGoogle({ credential: 'ana' }, {});
+
+      expect(signedIn.id).toBe(user.id);
+    });
+
+    it('rejects an email already linked to a different Google account', async () => {
+      await createUser({ googleId: 'g-otro' });
+
+      await expect(service.loginWithGoogle({ credential: 'ana' }, {})).rejects.toMatchObject({
+        response: { error: 'GOOGLE_ACCOUNT_MISMATCH' },
+      });
+    });
+
+    it('turns an unknown person into a pending request without creating a user', async () => {
+      await expect(service.loginWithGoogle({ credential: 'nuevo' }, {})).rejects.toMatchObject({
+        response: { error: 'ACCESS_PENDING', request: { firstName: 'Nuevo', hasDetails: false } },
+      });
+
+      expect(await prisma.user.count()).toBe(0);
+      const request = await prisma.accessRequest.findUniqueOrThrow({
+        where: { email: 'nuevo@alumbra.test' },
+      });
+      expect(request).toMatchObject({ status: 'PENDING', googleId: 'g-nuevo', userId: null });
+    });
+
+    it('lets the person complete their request with phone and note', async () => {
+      await service.loginWithGoogle({ credential: 'nuevo' }, {}).catch(() => undefined);
+
+      await expect(
+        service.loginWithGoogle(
+          { credential: 'nuevo', phone: '3001234567', note: 'Vine con mi tía' },
+          {},
+        ),
+      ).rejects.toMatchObject({ response: { request: { hasDetails: true } } });
+
+      expect(await prisma.accessRequest.count()).toBe(1);
+      const request = await prisma.accessRequest.findFirstOrThrow();
+      expect(request).toMatchObject({ phone: '3001234567', note: 'Vine con mi tía' });
+    });
+
+    it('links the request to an existing user that has no access yet', async () => {
+      const user = await createUser({ canSignIn: false });
+
+      await expect(service.loginWithGoogle({ credential: 'ana' }, {})).rejects.toMatchObject({
+        response: { error: 'ACCESS_PENDING' },
+      });
+
+      const request = await prisma.accessRequest.findFirstOrThrow();
+      expect(request.userId).toBe(user.id);
+    });
+
+    it('keeps a rejected request rejected', async () => {
+      await service.loginWithGoogle({ credential: 'nuevo' }, {}).catch(() => undefined);
+      await prisma.accessRequest.updateMany({ data: { status: 'REJECTED' } });
+
+      await expect(service.loginWithGoogle({ credential: 'nuevo' }, {})).rejects.toMatchObject({
+        response: { error: 'ACCESS_REJECTED' },
+      });
+      expect((await prisma.accessRequest.findFirstOrThrow()).status).toBe('REJECTED');
+    });
+
+    it('propagates an invalid Google token', async () => {
+      await expect(service.loginWithGoogle({ credential: 'falso' }, {})).rejects.toMatchObject({
+        response: { error: 'INVALID_GOOGLE_TOKEN' },
+      });
     });
   });
 });

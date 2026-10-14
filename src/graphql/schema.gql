@@ -2,6 +2,30 @@
 # THIS FILE WAS AUTOMATICALLY GENERATED (DO NOT MODIFY)
 # ------------------------------------------------------
 
+type AccessRequest {
+  createdAt: DateTime!
+  email: String!
+  firstName: String!
+  id: ID!
+
+  """El correo ya era de una persona registrada sin acceso."""
+  isExistingUser: Boolean!
+  lastName: String!
+
+  """Lo que la persona escribió al pedir acceso."""
+  note: String
+  phone: String
+  photoUrl: String
+  reviewedAt: DateTime
+  status: AccessRequestStatus!
+}
+
+enum AccessRequestStatus {
+  APPROVED
+  PENDING
+  REJECTED
+}
+
 input AddSessionMaterialInput {
   sessionId: ID!
   title: String!
@@ -393,6 +417,9 @@ type Mutation {
   addUserToGroup(input: AddUserToGroupInput!): GroupMembership!
   addUserToMinistry(input: AddUserToMinistryInput!): MinistryMembership!
 
+  """Da acceso: habilita o crea el usuario (como asistente)."""
+  approveAccessRequest(id: ID!): AccessRequest!
+
   """Cierra el grupo una vez completado."""
   archiveGroup(id: ID!): Group!
   archiveMinistry(id: ID!): Ministry!
@@ -439,6 +466,7 @@ type Mutation {
 
   """Crea o reemplaza mi reacción al post."""
   reactToPost(postId: ID!, type: ReactionType!): Post!
+  rejectAccessRequest(id: ID!): AccessRequest!
   removePostReaction(postId: ID!): Post!
   removeSessionMaterial(id: ID!): Boolean!
   removeUserFromGroup(membershipId: ID!): GroupMembership!
@@ -552,6 +580,11 @@ type PublicEvent {
 }
 
 type Query {
+  """
+  Solicitudes de acceso hechas con Google. Pastores y líderes de Acogida.
+  """
+  accessRequests(status: AccessRequestStatus! = PENDING): [AccessRequest!]!
+
   """Placeholder until the first real queries ship."""
   apiVersion: String!
 

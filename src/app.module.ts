@@ -7,6 +7,7 @@ import cookieParser from 'cookie-parser';
 import { Request, Response } from 'express';
 import { GraphQLFormattedError } from 'graphql';
 import { join } from 'path';
+import { AccessRequestsModule } from './access-requests/access-requests.module';
 import { AuthModule } from './auth/auth.module';
 import { ConfigModule } from './config/config.module';
 import { CoursesModule } from './courses/courses.module';
@@ -72,6 +73,7 @@ function formatGraphQLError(
       }),
     }),
     AuthModule,
+    AccessRequestsModule,
     UsersModule,
     MinistriesModule,
     GroupsModule,

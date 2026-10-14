@@ -1,8 +1,9 @@
 import { Body, Controller, HttpCode, Post, Req, Res, UseGuards } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { SkipThrottle, Throttle, ThrottlerGuard } from '@nestjs/throttler';
+import { User } from '@prisma/client';
 import { Request, Response } from 'express';
-import { AuthService } from './auth.service';
+import { AuthService, IssuedTokens } from './auth.service';
 import { Public } from './decorators/public.decorator';
 
 export const REFRESH_COOKIE = 'alumbra_rt';
@@ -21,25 +22,25 @@ export class AuthController {
   @HttpCode(200)
   @Throttle({ default: { limit: 5, ttl: FIFTEEN_MINUTES_MS } })
   async login(@Body() body: unknown, @Req() req: Request, @Res() res: Response): Promise<void> {
-    const { accessToken, accessTokenExpiresAt, refreshToken, user } = await this.authService.login(
-      body,
-      { userAgent: req.headers['user-agent'], ipAddress: req.ip },
-    );
-    this.setRefreshCookie(res, refreshToken);
-    res.json({
-      accessToken,
-      accessTokenExpiresAt,
-      user: {
-        id: user.id,
-        email: user.email,
-        firstName: user.firstName,
-        lastName: user.lastName,
-        baseRole: user.baseRole,
-        isPastor: user.isPastor,
-        isLeader: user.isLeader,
-        photoUrl: user.photoUrl,
-      },
+    const session = await this.authService.login(body, {
+      userAgent: req.headers['user-agent'],
+      ipAddress: req.ip,
     });
+    this.sendSession(res, session);
+  }
+
+  // Más holgado que /login: quien todavía no tiene acceso lo llama dos veces
+  // (entrar y luego completar su solicitud), y el token de Google ya prueba
+  // que no es alguien adivinando contraseñas.
+  @Post('google')
+  @HttpCode(200)
+  @Throttle({ default: { limit: 15, ttl: FIFTEEN_MINUTES_MS } })
+  async google(@Body() body: unknown, @Req() req: Request, @Res() res: Response): Promise<void> {
+    const session = await this.authService.loginWithGoogle(body, {
+      userAgent: req.headers['user-agent'],
+      ipAddress: req.ip,
+    });
+    this.sendSession(res, session);
   }
 
   @Post('refresh')
@@ -66,6 +67,25 @@ export class AuthController {
     await this.authService.logout(this.readRefreshCookie(req));
     this.clearRefreshCookie(res);
     res.json({ ok: true });
+  }
+
+  private sendSession(res: Response, session: IssuedTokens & { user: User }): void {
+    const { accessToken, accessTokenExpiresAt, refreshToken, user } = session;
+    this.setRefreshCookie(res, refreshToken);
+    res.json({
+      accessToken,
+      accessTokenExpiresAt,
+      user: {
+        id: user.id,
+        email: user.email,
+        firstName: user.firstName,
+        lastName: user.lastName,
+        baseRole: user.baseRole,
+        isPastor: user.isPastor,
+        isLeader: user.isLeader,
+        photoUrl: user.photoUrl,
+      },
+    });
   }
 
   private readRefreshCookie(req: Request): string | undefined {

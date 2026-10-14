@@ -11,6 +11,9 @@ const envSchema = z.object({
     .default('15m'),
   REFRESH_TTL_DAYS: z.coerce.number().int().positive().default(30),
   COOKIE_DOMAIN: z.string().optional(),
+  // OAuth Client ID (tipo web) del proyecto de GCP. Sin él, POST /auth/google
+  // responde 503 y el resto de la app funciona igual.
+  GOOGLE_CLIENT_ID: z.string().optional(),
   // Uno o varios orígenes separados por comas: el sitio se sirve en el dominio
   // apex y en www, y son orígenes distintos para el navegador.
   CORS_ORIGIN: z
