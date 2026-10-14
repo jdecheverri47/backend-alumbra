@@ -32,6 +32,7 @@ export function toPostModel(post: PostRow, viewer: AuthenticatedUser): PostModel
     event: event ? toEventModel(event) : null,
     images: post.images.map((i) => ({ id: i.id, url: i.url, position: i.position })),
     pinnedAt: post.pinnedAt,
+    membersOnly: post.membersOnly,
     createdAt: post.createdAt,
   };
 }

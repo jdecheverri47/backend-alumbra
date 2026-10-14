@@ -1,15 +1,19 @@
 import {
   BadRequestException,
+  ConflictException,
   ForbiddenException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { PostComment, ReactionType, User } from '@prisma/client';
+import { PostComment, Prisma, ReactionType, User } from '@prisma/client';
 import { decodeCursor, encodeCursor } from '../common/pagination/encode-cursor';
 import { PaginationInput } from '../common/pagination/pagination.input';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuthenticatedUser } from '../auth/types/authenticated-user';
-import { addCommentSchema, createPostSchema } from './dto/inputs.schema';
+import { canSeeMembersOnly } from '../events/event-visibility';
+import { addCommentSchema, createPostSchema, votePollSchema } from './dto/inputs.schema';
+import { PollModel } from './dto/poll.model';
+import { FeedAudience } from './dto/feed-audience.enum';
 import { PostConnection } from './dto/post.model';
 import { POST_INCLUDE, PostRow, toPostModel } from './dto/to-post-model';
 
@@ -17,9 +21,15 @@ import { POST_INCLUDE, PostRow, toPostModel } from './dto/to-post-model';
 export class FeedService {
   constructor(private readonly prisma: PrismaService) {}
 
-  /** Pastores, líderes designados, líderes de grupo y líderes de ministerio pueden publicar. */
+  /**
+   * Publican pastores, líderes designados, líderes de grupo y líderes de
+   * ministerio (coordinadores). Un asistente nunca, aunque dirija un grupo.
+   * Comentar y reaccionar sí lo puede hacer cualquiera.
+   */
   async canPost(me: AuthenticatedUser): Promise<boolean> {
-    if (me.isPastor || me.user.isLeader) return true;
+    if (me.isPastor) return true;
+    if (me.baseRole === 'ASISTENTE') return false;
+    if (me.user.isLeader) return true;
     const [ledGroup, ledMinistry] = await Promise.all([
       this.prisma.group.findFirst({ where: { leaderId: me.sub, archivedAt: null } }),
       this.prisma.ministryMembership.findFirst({
@@ -56,19 +66,99 @@ export class FeedService {
         authorId: me.sub,
         type: data.type,
         body: data.body,
+        membersOnly: data.membersOnly,
         eventId: data.eventId,
         images: {
           create: data.imageUrls.map((url, position) => ({ url, position })),
         },
+        ...(data.poll
+          ? {
+              poll: {
+                create: {
+                  closesAt: data.poll.durationHours
+                    ? new Date(Date.now() + data.poll.durationHours * 3600 * 1000)
+                    : null,
+                  options: {
+                    create: data.poll.options.map((text, position) => ({ text, position })),
+                  },
+                },
+              },
+            }
+          : {}),
       },
       include: POST_INCLUDE,
     });
   }
 
-  async feed(me: AuthenticatedUser, page: PaginationInput): Promise<PostConnection> {
+  /** La encuesta del post con sus conteos y lo que votó `viewerId`; null si no tiene. */
+  async pollFor(postId: string, viewerId: string): Promise<PollModel | null> {
+    const poll = await this.prisma.postPoll.findUnique({
+      where: { postId },
+      include: {
+        options: {
+          orderBy: { position: 'asc' },
+          include: { _count: { select: { votes: true } } },
+        },
+        votes: { where: { userId: viewerId }, select: { optionId: true } },
+      },
+    });
+    if (!poll) return null;
+
+    const options = poll.options.map((o) => ({ id: o.id, text: o.text, votes: o._count.votes }));
+    return {
+      id: poll.id,
+      options,
+      totalVotes: options.reduce((sum, o) => sum + o.votes, 0),
+      myVoteOptionId: poll.votes[0]?.optionId ?? null,
+      closesAt: poll.closesAt,
+      isClosed: poll.closesAt !== null && poll.closesAt <= new Date(),
+    };
+  }
+
+  /** Un voto por persona y no se cambia, como en X/Twitter. */
+  async votePoll(me: AuthenticatedUser, raw: unknown): Promise<PollModel> {
+    const { optionId } = votePollSchema.parse(raw);
+    const option = await this.prisma.postPollOption.findUnique({
+      where: { id: optionId },
+      include: { poll: { include: { post: true } } },
+    });
+    if (
+      !option ||
+      option.poll.post.deletedAt ||
+      (option.poll.post.membersOnly && !canSeeMembersOnly(me))
+    ) {
+      throw new NotFoundException(`Poll option ${optionId} not found.`);
+    }
+    const { poll } = option;
+    if (poll.closesAt && poll.closesAt <= new Date()) {
+      throw new BadRequestException({ error: 'POLL_CLOSED', message: 'La encuesta ya cerró.' });
+    }
+
+    try {
+      await this.prisma.postPollVote.create({
+        data: { pollId: poll.id, optionId, userId: me.sub },
+      });
+    } catch (e) {
+      if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2002') {
+        throw new ConflictException({
+          error: 'ALREADY_VOTED',
+          message: 'Ya votaste en esta encuesta.',
+        });
+      }
+      throw e;
+    }
+
+    return (await this.pollFor(poll.postId, me.sub))!;
+  }
+
+  async feed(
+    me: AuthenticatedUser,
+    page: PaginationInput,
+    audience: FeedAudience = FeedAudience.ALL,
+  ): Promise<PostConnection> {
     const first = Math.max(1, Math.min(50, page.first ?? 20));
     const rows = await this.prisma.post.findMany({
-      where: { deletedAt: null },
+      where: { deletedAt: null, ...this.visibleTo(me, audience) },
       include: POST_INCLUDE,
       orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
       take: first + 1,
@@ -86,9 +176,12 @@ export class FeedService {
     };
   }
 
-  async pinnedAnnouncements(): Promise<PostRow[]> {
+  async pinnedAnnouncements(
+    me: AuthenticatedUser,
+    audience: FeedAudience = FeedAudience.ALL,
+  ): Promise<PostRow[]> {
     return this.prisma.post.findMany({
-      where: { deletedAt: null, pinnedAt: { not: null } },
+      where: { deletedAt: null, pinnedAt: { not: null }, ...this.visibleTo(me, audience) },
       include: POST_INCLUDE,
       orderBy: { pinnedAt: 'desc' },
     });
@@ -122,7 +215,7 @@ export class FeedService {
   }
 
   async react(me: AuthenticatedUser, postId: string, type: ReactionType): Promise<PostRow> {
-    const post = await this.findByIdOrThrow(postId);
+    const post = await this.findByIdOrThrow(postId, me);
     await this.prisma.postReaction.upsert({
       where: { postId_userId: { postId, userId: me.sub } },
       create: { postId, userId: me.sub, type },
@@ -132,14 +225,14 @@ export class FeedService {
   }
 
   async removeReaction(me: AuthenticatedUser, postId: string): Promise<PostRow> {
-    const post = await this.findByIdOrThrow(postId);
+    const post = await this.findByIdOrThrow(postId, me);
     await this.prisma.postReaction.deleteMany({ where: { postId, userId: me.sub } });
     return post;
   }
 
   async addComment(me: AuthenticatedUser, raw: unknown): Promise<PostComment & { author: User }> {
     const { postId, body } = addCommentSchema.parse(raw);
-    await this.findByIdOrThrow(postId);
+    await this.findByIdOrThrow(postId, me);
     return this.prisma.postComment.create({
       data: { postId, authorId: me.sub, body },
       include: { author: true },
@@ -167,7 +260,11 @@ export class FeedService {
     });
   }
 
-  async comments(postId: string): Promise<Array<PostComment & { author: User }>> {
+  async comments(
+    me: AuthenticatedUser,
+    postId: string,
+  ): Promise<Array<PostComment & { author: User }>> {
+    await this.findByIdOrThrow(postId, me);
     return this.prisma.postComment.findMany({
       where: { postId, deletedAt: null },
       include: { author: true },
@@ -195,9 +292,28 @@ export class FeedService {
     return this.prisma.postComment.count({ where: { postId, deletedAt: null } });
   }
 
-  private async findByIdOrThrow(id: string): Promise<PostRow> {
+  /** Con `me`, un post interno que no puede ver cuenta como inexistente. */
+  private async findByIdOrThrow(id: string, me?: AuthenticatedUser): Promise<PostRow> {
     const post = await this.prisma.post.findUnique({ where: { id }, include: POST_INCLUDE });
-    if (!post || post.deletedAt) throw new NotFoundException(`Post ${id} not found.`);
+    const hidden = me && post?.membersOnly && !canSeeMembersOnly(me);
+    if (!post || post.deletedAt || hidden) throw new NotFoundException(`Post ${id} not found.`);
     return post;
+  }
+
+  /**
+   * Los posts internos solo los ven miembros y pastores; sobre eso se aplica el
+   * filtro del feed. Un asistente que pida MEMBERS_ONLY se queda sin nada, no
+   * con los públicos.
+   */
+  private visibleTo(
+    me: AuthenticatedUser,
+    audience: FeedAudience = FeedAudience.ALL,
+  ): { membersOnly?: boolean; id?: { in: [] } } {
+    if (!canSeeMembersOnly(me)) {
+      return audience === FeedAudience.MEMBERS_ONLY ? { id: { in: [] } } : { membersOnly: false };
+    }
+    if (audience === FeedAudience.MEMBERS_ONLY) return { membersOnly: true };
+    if (audience === FeedAudience.EVERYONE) return { membersOnly: false };
+    return {};
   }
 }

@@ -4,6 +4,7 @@ import { wipeDb } from '../../test/setup/wipe-db';
 import { requireLocalDb } from '../../test/setup/require-local-db';
 import { AuthenticatedUser } from '../auth/types/authenticated-user';
 import { PrismaService } from '../prisma/prisma.service';
+import { FeedAudience } from './dto/feed-audience.enum';
 import { FeedService } from './feed.service';
 
 const asAuth = (u: User): AuthenticatedUser => ({
@@ -109,10 +110,12 @@ describe('FeedService', () => {
         imageUrls: [],
       });
       await service.setPinned(anuncio.id, true);
-      expect((await service.pinnedAnnouncements()).map((p) => p.id)).toEqual([anuncio.id]);
+      expect((await service.pinnedAnnouncements(asAuth(miembro))).map((p) => p.id)).toEqual([
+        anuncio.id,
+      ]);
 
       await service.deletePost(asAuth(pastor), anuncio.id);
-      expect(await service.pinnedAnnouncements()).toHaveLength(0);
+      expect(await service.pinnedAnnouncements(asAuth(miembro))).toHaveLength(0);
       const page = await service.feed(asAuth(miembro), { first: 10 });
       expect(page.edges.map((e) => e.node.id)).toEqual([post.id]);
     });
@@ -169,6 +172,166 @@ describe('FeedService', () => {
       // The post author can.
       await service.deleteComment(asAuth(liderGrupo), comment.id);
       expect(await service.commentCount(post.id)).toBe(0);
+    });
+  });
+
+  describe('polls', () => {
+    const createPoll = (options: string[], durationHours?: number) =>
+      service.createPost(asAuth(pastor), {
+        body: '¿Qué día prefieren para el retiro?',
+        poll: { options, durationHours },
+      });
+
+    it('creates the poll with its options in order and no votes', async () => {
+      const post = await createPoll(['Sábado', 'Domingo'], 24);
+
+      const poll = await service.pollFor(post.id, miembro.id);
+      expect(poll).toMatchObject({
+        totalVotes: 0,
+        myVoteOptionId: null,
+        isClosed: false,
+        options: [
+          { text: 'Sábado', votes: 0 },
+          { text: 'Domingo', votes: 0 },
+        ],
+      });
+      expect(poll!.closesAt!.getTime()).toBeGreaterThan(Date.now() + 23 * 3600 * 1000);
+    });
+
+    it('returns null for a post without poll', async () => {
+      const post = await service.createPost(asAuth(pastor), { body: 'hola' });
+      expect(await service.pollFor(post.id, miembro.id)).toBeNull();
+    });
+
+    it('rejects fewer than 2, more than 4, or repeated options', async () => {
+      await expect(createPoll(['Solo una'])).rejects.toThrow();
+      await expect(createPoll(['a', 'b', 'c', 'd', 'e'])).rejects.toThrow();
+      await expect(createPoll(['Sí', 'sí'])).rejects.toThrow(/distinct/);
+    });
+
+    it('counts votes and remembers mine; any member can vote', async () => {
+      const post = await createPoll(['Sábado', 'Domingo']);
+      const [sabado, domingo] = (await service.pollFor(post.id, miembro.id))!.options;
+
+      await service.votePoll(asAuth(liderGrupo), { optionId: domingo.id });
+      const mine = await service.votePoll(asAuth(miembro), { optionId: sabado.id });
+
+      expect(mine.totalVotes).toBe(2);
+      expect(mine.myVoteOptionId).toBe(sabado.id);
+      expect(mine.options.map((o) => o.votes)).toEqual([1, 1]);
+    });
+
+    it('allows only one vote per person', async () => {
+      const post = await createPoll(['Sábado', 'Domingo']);
+      const [sabado, domingo] = (await service.pollFor(post.id, miembro.id))!.options;
+
+      await service.votePoll(asAuth(miembro), { optionId: sabado.id });
+      await expect(
+        service.votePoll(asAuth(miembro), { optionId: domingo.id }),
+      ).rejects.toMatchObject({ response: { error: 'ALREADY_VOTED' } });
+    });
+
+    it('rejects votes once the poll closed', async () => {
+      const post = await createPoll(['Sábado', 'Domingo'], 1);
+      await prisma.postPoll.update({
+        where: { postId: post.id },
+        data: { closesAt: new Date(Date.now() - 1000) },
+      });
+      const poll = (await service.pollFor(post.id, miembro.id))!;
+
+      expect(poll.isClosed).toBe(true);
+      await expect(
+        service.votePoll(asAuth(miembro), { optionId: poll.options[0].id }),
+      ).rejects.toMatchObject({ response: { error: 'POLL_CLOSED' } });
+    });
+  });
+
+  describe('visibility and who may post', () => {
+    let asistente: User;
+
+    beforeEach(async () => {
+      asistente = await prisma.user.create({
+        data: { email: 'asistente@x.com', firstName: 'A', lastName: 'Cuatro' },
+      });
+    });
+
+    it('an asistente cannot post even when leading a group', async () => {
+      await prisma.group.create({
+        data: { type: 'CONEXION', name: 'Conexión A', leaderId: asistente.id },
+      });
+
+      expect(await service.canPost(asAuth(asistente))).toBe(false);
+      await expect(service.createPost(asAuth(asistente), { body: 'hola' })).rejects.toThrow(
+        /líderes/i,
+      );
+    });
+
+    it('hides internal posts from asistentes everywhere, but not from members', async () => {
+      const publico = await service.createPost(asAuth(pastor), { body: 'para todos' });
+      const interno = await service.createPost(asAuth(pastor), {
+        type: 'ANUNCIO',
+        body: 'solo miembros',
+        membersOnly: true,
+      });
+      await service.setPinned(interno.id, true);
+
+      const forAsistente = await service.feed(asAuth(asistente), { first: 10 });
+      expect(forAsistente.edges.map((e) => e.node.id)).toEqual([publico.id]);
+      expect(await service.pinnedAnnouncements(asAuth(asistente))).toHaveLength(0);
+      await expect(service.comments(asAuth(asistente), interno.id)).rejects.toThrow(/not found/);
+      await expect(service.react(asAuth(asistente), interno.id, 'LIKE')).rejects.toThrow(
+        /not found/,
+      );
+
+      const forMiembro = await service.feed(asAuth(miembro), { first: 10 });
+      expect(forMiembro.edges.map((e) => e.node.id)).toEqual([interno.id, publico.id]);
+      expect(forMiembro.edges[0].node.membersOnly).toBe(true);
+    });
+
+    it('filters the feed by audience; asistentes never get internal posts', async () => {
+      const publico = await service.createPost(asAuth(pastor), { body: 'para todos' });
+      const interno = await service.createPost(asAuth(pastor), {
+        body: 'solo miembros',
+        membersOnly: true,
+      });
+      const ids = async (who: User, audience: FeedAudience) =>
+        (await service.feed(asAuth(who), { first: 10 }, audience)).edges.map((e) => e.node.id);
+
+      expect(await ids(miembro, FeedAudience.ALL)).toEqual([interno.id, publico.id]);
+      expect(await ids(miembro, FeedAudience.MEMBERS_ONLY)).toEqual([interno.id]);
+      expect(await ids(miembro, FeedAudience.EVERYONE)).toEqual([publico.id]);
+      expect(await ids(asistente, FeedAudience.MEMBERS_ONLY)).toEqual([]);
+      expect(await ids(asistente, FeedAudience.ALL)).toEqual([publico.id]);
+    });
+
+    it('paginates newest first without repeating posts', async () => {
+      const created: string[] = [];
+      for (let i = 0; i < 5; i++) {
+        created.push((await service.createPost(asAuth(pastor), { body: `post ${i}` })).id);
+      }
+      const page1 = await service.feed(asAuth(miembro), { first: 2 });
+      const page2 = await service.feed(asAuth(miembro), {
+        first: 2,
+        after: page1.pageInfo.endCursor!,
+      });
+      const page3 = await service.feed(asAuth(miembro), {
+        first: 2,
+        after: page2.pageInfo.endCursor!,
+      });
+
+      const seen = [...page1.edges, ...page2.edges, ...page3.edges].map((e) => e.node.id);
+      expect(seen).toEqual([...created].reverse());
+      expect(page3.pageInfo.hasNextPage).toBe(false);
+    });
+
+    it('anyone, asistentes included, can comment and react on what they see', async () => {
+      const post = await service.createPost(asAuth(pastor), { body: 'para todos' });
+
+      await service.react(asAuth(asistente), post.id, 'AMEN');
+      await service.addComment(asAuth(asistente), { postId: post.id, body: '¡Amén!' });
+
+      expect(await service.myReaction(asistente.id, post.id)).toBe('AMEN');
+      expect(await service.commentCount(post.id)).toBe(1);
     });
   });
 });

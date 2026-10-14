@@ -196,6 +196,14 @@ input CreateMinistryInput {
   slug: String!
 }
 
+input CreatePollInput {
+  """Horas hasta que cierra; sin valor, no cierra."""
+  durationHours: Int
+
+  """Entre 2 y 4 opciones."""
+  options: [String!]!
+}
+
 input CreatePostInput {
   body: String!
 
@@ -204,6 +212,14 @@ input CreatePostInput {
 
   """URLs devueltas por POST /uploads."""
   imageUrls: [String!]! = []
+
+  """
+  Interno: solo lo ven miembros y pastores. Por defecto lo ve toda la iglesia.
+  """
+  membersOnly: Boolean! = false
+
+  """Convierte el post en encuesta; el cuerpo es la pregunta."""
+  poll: CreatePollInput
   type: PostType! = POST
 }
 
@@ -249,12 +265,28 @@ type Event {
   title: String!
 }
 
+enum FeedAudience {
+  """Todo lo que puedo ver."""
+  ALL
+
+  """Solo las publicaciones para toda la iglesia."""
+  EVERYONE
+
+  """Solo las publicaciones internas (para miembros)."""
+  MEMBERS_ONLY
+}
+
 type FeedPermissions {
   """Puede publicar anuncios y fijarlos (pastor)."""
   canAnnounce: Boolean!
 
   """Puede publicar posts (pastor o líder)."""
   canPost: Boolean!
+
+  """
+  Ve las publicaciones internas (miembro o pastor): decide si hay filtro.
+  """
+  canSeeMembersOnly: Boolean!
 }
 
 type Group {
@@ -511,6 +543,9 @@ type Mutation {
 
   """Valida (o no) la entrada a la Ruta. Exige Evangelio certificado."""
   validateJourney(approved: Boolean!, id: ID!, notes: String): MembershipJourney!
+
+  """Vota en una encuesta. Un voto por persona."""
+  votePoll(optionId: ID!): Poll!
 }
 
 type PageInfo {
@@ -523,6 +558,26 @@ input PaginationInput {
   first: Int! = 20
 }
 
+type Poll {
+  """null = no cierra."""
+  closesAt: DateTime
+  id: ID!
+  isClosed: Boolean!
+
+  """La opción que voté, o null si no he votado."""
+  myVoteOptionId: ID
+
+  """En el orden en que se escribieron."""
+  options: [PollOption!]!
+  totalVotes: Int!
+}
+
+type PollOption {
+  id: ID!
+  text: String!
+  votes: Int!
+}
+
 type Post {
   author: User!
   body: String!
@@ -531,8 +586,12 @@ type Post {
   event: Event
   id: ID!
   images: [PostImage!]!
+
+  """Interno: solo lo ven miembros y pastores."""
+  membersOnly: Boolean!
   myReaction: ReactionType
   pinnedAt: DateTime
+  poll: Poll
   reactionCounts: [ReactionCount!]!
   type: PostType!
 }
@@ -606,7 +665,7 @@ type Query {
   events(from: DateTime!, to: DateTime!): [Event!]!
 
   """Feed principal, más reciente primero."""
-  feed(pagination: PaginationInput): PostConnection!
+  feed(audience: FeedAudience! = ALL, pagination: PaginationInput): PostConnection!
   group(id: ID!): Group!
   groupSession(id: ID!): GroupSession!
 
@@ -653,7 +712,7 @@ type Query {
   pendingCourseEnrollments(courseId: ID!): [CourseEnrollment!]!
 
   """Anuncios fijados, para mostrar arriba del feed."""
-  pinnedAnnouncements: [Post!]!
+  pinnedAnnouncements(audience: FeedAudience! = ALL): [Post!]!
 
   """Comentarios de un post, más antiguo primero."""
   postComments(postId: ID!): [PostComment!]!

@@ -108,9 +108,10 @@ model User {
   accessRequest          AccessRequest?         @relation("AccessRequestUser")
   reviewedAccessRequests AccessRequest[]        @relation("AccessRequestReviewer")
 
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @updatedAt
-  deletedAt DateTime?
+  createdAt    DateTime       @default(now())
+  updatedAt    DateTime       @updatedAt
+  deletedAt    DateTime?
+  PostPollVote PostPollVote[]
 
   @@index([deletedAt])
 }
@@ -493,19 +494,22 @@ model Event {
 }
 
 model Post {
-  id       String    @id @default(cuid())
-  authorId String
-  type     PostType  @default(POST)
-  body     String
+  id          String    @id @default(cuid())
+  authorId    String
+  type        PostType  @default(POST)
+  body        String
   // Only ANUNCIO posts get pinned; ordered by pinnedAt desc.
-  pinnedAt DateTime?
-  eventId  String?
+  pinnedAt    DateTime?
+  // Interno: solo miembros y pastores lo ven (la misma regla que los eventos).
+  membersOnly Boolean   @default(false)
+  eventId     String?
 
   author    User           @relation(fields: [authorId], references: [id])
   event     Event?         @relation(fields: [eventId], references: [id])
   images    PostImage[]
   reactions PostReaction[]
   comments  PostComment[]
+  poll      PostPoll?
 
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
@@ -513,6 +517,49 @@ model Post {
 
   @@index([createdAt])
   @@index([deletedAt])
+}
+
+// Encuesta de un post: la pregunta es el cuerpo del post. Un voto por persona,
+// que no se cambia (como en X/Twitter).
+model PostPoll {
+  id       String    @id @default(cuid())
+  postId   String    @unique
+  // null = no cierra.
+  closesAt DateTime?
+
+  post    Post             @relation(fields: [postId], references: [id])
+  options PostPollOption[]
+  votes   PostPollVote[]
+
+  createdAt DateTime @default(now())
+}
+
+model PostPollOption {
+  id       String @id @default(cuid())
+  pollId   String
+  text     String
+  position Int
+
+  poll  PostPoll       @relation(fields: [pollId], references: [id])
+  votes PostPollVote[]
+
+  @@index([pollId])
+}
+
+model PostPollVote {
+  id       String @id @default(cuid())
+  pollId   String
+  optionId String
+  userId   String
+
+  poll   PostPoll       @relation(fields: [pollId], references: [id])
+  option PostPollOption @relation(fields: [optionId], references: [id])
+  user   User           @relation(fields: [userId], references: [id])
+
+  createdAt DateTime @default(now())
+
+  @@unique([pollId, userId])
+  @@index([optionId])
 }
 
 model PostImage {

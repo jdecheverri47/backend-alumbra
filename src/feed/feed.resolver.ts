@@ -1,5 +1,6 @@
 import { Args, ID, Int, Mutation, Parent, Query, ResolveField, Resolver } from '@nestjs/graphql';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
+import { canSeeMembersOnly } from '../events/event-visibility';
 import { RequirePastor } from '../auth/decorators/require-pastor.decorator';
 import { AuthenticatedUser } from '../auth/types/authenticated-user';
 import { PaginationInput } from '../common/pagination/pagination.input';
@@ -11,6 +12,8 @@ import {
   PostModel,
   ReactionCountModel,
 } from './dto/post.model';
+import { FeedAudience } from './dto/feed-audience.enum';
+import { PollModel } from './dto/poll.model';
 import { ReactionType } from './dto/reaction-type.enum';
 import { toPostCommentModel, toPostModel } from './dto/to-post-model';
 import { FeedService } from './feed.service';
@@ -23,13 +26,19 @@ export class FeedResolver {
   async feed(
     @CurrentUser() me: AuthenticatedUser,
     @Args('pagination', { nullable: true }) pagination?: PaginationInput,
+    @Args('audience', { type: () => FeedAudience, defaultValue: FeedAudience.ALL })
+    audience?: FeedAudience,
   ): Promise<PostConnection> {
-    return this.feedService.feed(me, pagination ?? { first: 20 });
+    return this.feedService.feed(me, pagination ?? { first: 20 }, audience);
   }
 
   @Query(() => [PostModel], { description: 'Anuncios fijados, para mostrar arriba del feed.' })
-  async pinnedAnnouncements(@CurrentUser() me: AuthenticatedUser): Promise<PostModel[]> {
-    const rows = await this.feedService.pinnedAnnouncements();
+  async pinnedAnnouncements(
+    @CurrentUser() me: AuthenticatedUser,
+    @Args('audience', { type: () => FeedAudience, defaultValue: FeedAudience.ALL })
+    audience?: FeedAudience,
+  ): Promise<PostModel[]> {
+    const rows = await this.feedService.pinnedAnnouncements(me, audience);
     return rows.map((post) => toPostModel(post, me));
   }
 
@@ -38,14 +47,16 @@ export class FeedResolver {
     return {
       canPost: await this.feedService.canPost(me),
       canAnnounce: me.isPastor,
+      canSeeMembersOnly: canSeeMembersOnly(me),
     };
   }
 
   @Query(() => [PostCommentModel], { description: 'Comentarios de un post, más antiguo primero.' })
   async postComments(
     @Args('postId', { type: () => ID }) postId: string,
+    @CurrentUser() me: AuthenticatedUser,
   ): Promise<PostCommentModel[]> {
-    const rows = await this.feedService.comments(postId);
+    const rows = await this.feedService.comments(me, postId);
     return rows.map(toPostCommentModel);
   }
 
@@ -128,5 +139,21 @@ export class FeedResolver {
   @ResolveField(() => Int)
   async commentCount(@Parent() post: PostModel): Promise<number> {
     return this.feedService.commentCount(post.id);
+  }
+
+  @ResolveField(() => PollModel, { nullable: true })
+  async poll(
+    @Parent() post: PostModel,
+    @CurrentUser() me: AuthenticatedUser,
+  ): Promise<PollModel | null> {
+    return this.feedService.pollFor(post.id, me.sub);
+  }
+
+  @Mutation(() => PollModel, { description: 'Vota en una encuesta. Un voto por persona.' })
+  async votePoll(
+    @Args('optionId', { type: () => ID }) optionId: string,
+    @CurrentUser() me: AuthenticatedUser,
+  ): Promise<PollModel> {
+    return this.feedService.votePoll(me, { optionId });
   }
 }

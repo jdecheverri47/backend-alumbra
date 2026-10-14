@@ -49,6 +49,9 @@ export class PostModel {
   @Field(() => Date, { nullable: true })
   pinnedAt?: Date | null;
 
+  @Field({ description: 'Interno: solo lo ven miembros y pastores.' })
+  membersOnly!: boolean;
+
   @Field(() => Date)
   createdAt!: Date;
 
@@ -95,4 +98,9 @@ export class FeedPermissionsModel {
 
   @Field(() => Boolean, { description: 'Puede publicar anuncios y fijarlos (pastor).' })
   canAnnounce!: boolean;
+
+  @Field(() => Boolean, {
+    description: 'Ve las publicaciones internas (miembro o pastor): decide si hay filtro.',
+  })
+  canSeeMembersOnly!: boolean;
 }
