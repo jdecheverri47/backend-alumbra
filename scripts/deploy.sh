@@ -61,6 +61,10 @@ echo
 # Artifact Registry (crea el repositorio automáticamente la primera vez).
 #
 # Nota: no se declara PORT — Cloud Run lo inyecta (8080) y lo reserva.
+#
+# --no-invoker-iam-check en vez de --allow-unauthenticated: la organización de
+# iglesiaalumbra.org tiene Domain Restricted Sharing, que prohíbe dar el rol de
+# invoker a allUsers. Esto deja el servicio público sin pasar por IAM.
 gcloud run deploy "${SERVICE}" \
   --project "${PROJECT_ID}" \
   --region "${REGION}" \
@@ -70,7 +74,7 @@ gcloud run deploy "${SERVICE}" \
   --add-cloudsql-instances "${SQL_CONNECTION_NAME}" \
   --set-secrets "DATABASE_URL=${SECRET_DATABASE_URL},JWT_SECRET=${SECRET_JWT}" \
   --set-env-vars "^##^NODE_ENV=production##CORS_ORIGIN=${CORS_ORIGIN}##COOKIE_DOMAIN=${COOKIE_DOMAIN}##JWT_ACCESS_TTL=${JWT_ACCESS_TTL}##REFRESH_TTL_DAYS=${REFRESH_TTL_DAYS}" \
-  --allow-unauthenticated \
+  --no-invoker-iam-check \
   --memory 512Mi \
   --cpu 1 \
   --min-instances 0 \

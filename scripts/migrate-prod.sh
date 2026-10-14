@@ -42,8 +42,17 @@ if [[ -z "${DB_PASSWORD:-}" ]]; then
     --project "${PROJECT_ID}")"
 fi
 
+# Si otro Postgres ya escucha en ese puerto, el chequeo de abajo lo daría por el
+# proxy y Prisma terminaría hablando con la base equivocada.
+if nc -z localhost "${PROXY_PORT}" 2>/dev/null; then
+  echo "error: localhost:${PROXY_PORT} ya está ocupado. Usa otro: PROXY_PORT=5439 $0" >&2
+  exit 1
+fi
+
 echo "==> Abriendo cloud-sql-proxy en localhost:${PROXY_PORT} → ${SQL_CONNECTION_NAME}"
-cloud-sql-proxy "${SQL_CONNECTION_NAME}" --port "${PROXY_PORT}" &
+# --gcloud-auth usa la cuenta de la configuración de gcloud (la de Alumbra) en
+# vez de las Application Default Credentials, que son globales a la máquina.
+cloud-sql-proxy "${SQL_CONNECTION_NAME}" --port "${PROXY_PORT}" --gcloud-auth &
 PROXY_PID=$!
 
 # Cierra el proxy pase lo que pase.
