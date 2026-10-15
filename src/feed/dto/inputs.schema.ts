@@ -16,18 +16,27 @@ const pollSchema = z.object({
   durationHours: z.number().int().min(1).max(720).optional(),
 });
 
+export const POST_MAX_MEDIA = 4;
+
+// URLs devueltas por /uploads (rutas locales) o URLs absolutas.
+const mediaUrl = z
+  .string()
+  .trim()
+  .min(1)
+  .max(500)
+  .refine(
+    (u) => u.startsWith('/uploads/') || /^https?:\/\//.test(u),
+    'each media URL must be an /uploads/ path or an http(s) URL',
+  );
+
 export const createPostSchema = z.object({
   type: z.enum(['POST', 'ANUNCIO']).default('POST'),
   body: z.string().trim().min(1).max(5000),
-  // URLs devueltas por POST /uploads (rutas locales) o URLs absolutas.
-  imageUrls: z
-    .array(z.string().trim().min(1).max(500))
-    .max(10)
-    .default([])
-    .refine(
-      (urls) => urls.every((u) => u.startsWith('/uploads/') || /^https?:\/\//.test(u)),
-      'each image must be an /uploads/ path or an http(s) URL',
-    ),
+  imageUrls: z.array(mediaUrl).max(10).default([]),
+  media: z
+    .array(z.object({ url: mediaUrl, kind: z.enum(['IMAGE', 'VIDEO']) }))
+    .max(POST_MAX_MEDIA)
+    .default([]),
   eventId: z.string().trim().min(1).optional(),
   poll: pollSchema.optional(),
   membersOnly: z.boolean().default(false),

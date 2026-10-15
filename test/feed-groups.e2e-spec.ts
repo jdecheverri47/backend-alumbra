@@ -369,4 +369,83 @@ describe('Feed + Groups + Events (e2e)', () => {
       })
       .expect(400);
   });
+  it('uploads: subida directa (intent + PUT) y lectura', async () => {
+    const video = Buffer.from('fake-mp4-bytes');
+
+    await request(app.getHttpServer())
+      .post('/uploads/intent')
+      .send({ contentType: 'video/mp4', size: video.length })
+      .expect(401);
+
+    await request(app.getHttpServer())
+      .post('/uploads/intent')
+      .set('Authorization', `Bearer ${miembroToken}`)
+      .send({ contentType: 'application/x-sh', size: 10 })
+      .expect(400);
+
+    await request(app.getHttpServer())
+      .post('/uploads/intent')
+      .set('Authorization', `Bearer ${miembroToken}`)
+      .send({ contentType: 'video/mp4', size: 300 * 1024 * 1024 })
+      .expect(413);
+
+    const intent = await request(app.getHttpServer())
+      .post('/uploads/intent')
+      .set('Authorization', `Bearer ${miembroToken}`)
+      .send({ contentType: 'video/mp4', size: video.length, filename: 'culto.MP4' })
+      .expect(200);
+    expect(intent.body.url).toMatch(/^\/uploads\/[0-9a-f-]{36}\.mp4$/);
+    expect(intent.body.method).toBe('PUT');
+
+    // Token de otro archivo o tipo distinto: no entra.
+    const otherName = intent.body.uploadUrl.replace(
+      /direct\/[^?]+/,
+      'direct/00000000-0000-0000-0000-000000000000.mp4',
+    );
+    await request(app.getHttpServer())
+      .put(otherName)
+      .set('Content-Type', 'video/mp4')
+      .send(video)
+      .expect(403);
+    await request(app.getHttpServer())
+      .put(intent.body.uploadUrl)
+      .set('Content-Type', 'image/png')
+      .send(video)
+      .expect(400);
+
+    await request(app.getHttpServer())
+      .put(intent.body.uploadUrl)
+      .set('Content-Type', 'video/mp4')
+      .send(video)
+      .expect(200);
+
+    const read = await request(app.getHttpServer()).get(intent.body.url).expect(200);
+    expect(Buffer.from(read.body).toString()).toBe('fake-mp4-bytes');
+
+    await request(app.getHttpServer()).get('/uploads/../package.json').expect(404);
+    await request(app.getHttpServer())
+      .get('/uploads/00000000-0000-0000-0000-000000000000.mp4')
+      .expect(404);
+
+    // El post guarda la galería en orden y con su tipo.
+    const post = await gql(pastorToken)
+      .send({
+        query: `mutation($media: [PostMediaInput!]!) {
+          createPost(input: { body: "Culto del domingo", media: $media }) {
+            images { url kind position }
+          }
+        }`,
+        variables: {
+          media: [
+            { url: intent.body.url, kind: 'VIDEO' },
+            { url: '/uploads/foto.jpg', kind: 'IMAGE' },
+          ],
+        },
+      })
+      .expect(200);
+    expect(post.body.data.createPost.images).toEqual([
+      { url: intent.body.url, kind: 'VIDEO', position: 0 },
+      { url: '/uploads/foto.jpg', kind: 'IMAGE', position: 1 },
+    ]);
+  });
 });

@@ -30,6 +30,7 @@
   },
   "dependencies": {
     "@apollo/server": "^4",
+    "@google-cloud/storage": "^8.4.0",
     "@nestjs/apollo": "^12",
     "@nestjs/common": "^10",
     "@nestjs/config": "^3",
@@ -37,7 +38,6 @@
     "@nestjs/graphql": "^12",
     "@nestjs/jwt": "^11.0.2",
     "@nestjs/platform-express": "^10",
-    "@nestjs/serve-static": "^4.0.2",
     "@nestjs/throttler": "^6.5.0",
     "@prisma/client": "^5",
     "bcryptjs": "^3.0.3",

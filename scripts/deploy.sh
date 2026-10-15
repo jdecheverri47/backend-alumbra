@@ -38,6 +38,9 @@ REFRESH_TTL_DAYS="${REFRESH_TTL_DAYS:-30}"
 # OAuth Client ID (web) para "Continuar con Google". No es secreto: el frontend
 # lo publica igual. Es el cliente "Alumbra web" del proyecto alumbra-504117.
 GOOGLE_CLIENT_ID="${GOOGLE_CLIENT_ID:-1022563906083-rjdnim29f3i09lu34tnufrc9ii3u4bec.apps.googleusercontent.com}"
+# Bucket privado de los archivos subidos (fotos, videos, documentos). El disco
+# de Cloud Run se borra en cada despliegue, así que sin bucket se pierden.
+GCS_BUCKET="${GCS_BUCKET:-alumbra-504117-uploads}"
 
 # --- Comprobaciones ---------------------------------------------------------
 command -v gcloud >/dev/null 2>&1 || {
@@ -57,6 +60,7 @@ echo "    proyecto : ${PROJECT_ID}"
 echo "    región   : ${REGION}"
 echo "    Cloud SQL: ${SQL_CONNECTION_NAME}"
 echo "    CORS     : ${CORS_ORIGIN}"
+echo "    Archivos : gs://${GCS_BUCKET}"
 echo
 
 # --- Deploy -----------------------------------------------------------------
@@ -76,7 +80,7 @@ gcloud run deploy "${SERVICE}" \
   --service-account "${SERVICE_ACCOUNT}" \
   --add-cloudsql-instances "${SQL_CONNECTION_NAME}" \
   --set-secrets "DATABASE_URL=${SECRET_DATABASE_URL},JWT_SECRET=${SECRET_JWT}" \
-  --set-env-vars "^##^NODE_ENV=production##CORS_ORIGIN=${CORS_ORIGIN}##COOKIE_DOMAIN=${COOKIE_DOMAIN}##JWT_ACCESS_TTL=${JWT_ACCESS_TTL}##REFRESH_TTL_DAYS=${REFRESH_TTL_DAYS}##GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID}" \
+  --set-env-vars "^##^NODE_ENV=production##CORS_ORIGIN=${CORS_ORIGIN}##COOKIE_DOMAIN=${COOKIE_DOMAIN}##JWT_ACCESS_TTL=${JWT_ACCESS_TTL}##REFRESH_TTL_DAYS=${REFRESH_TTL_DAYS}##GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID}##GCS_BUCKET=${GCS_BUCKET}" \
   --no-invoker-iam-check \
   --memory 512Mi \
   --cpu 1 \

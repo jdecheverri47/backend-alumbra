@@ -3,3 +3,6 @@
 process.env.DATABASE_URL =
   process.env.TEST_DATABASE_URL ??
   'postgresql://alumbra:password@localhost:5432/alumbra_test?schema=public';
+
+// Los archivos de los tests van a la carpeta local, nunca a un bucket real.
+delete process.env.GCS_BUCKET;

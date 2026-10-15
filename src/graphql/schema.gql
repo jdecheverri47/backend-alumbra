@@ -214,6 +214,11 @@ input CreatePostInput {
   imageUrls: [String!]! = []
 
   """
+  Galería de imágenes y videos, en orden (hasta 4). Va después de imageUrls.
+  """
+  media: [PostMediaInput!]! = []
+
+  """
   Interno: solo lo ven miembros y pastores. Por defecto lo ve toda la iglesia.
   """
   membersOnly: Boolean! = false
@@ -615,8 +620,21 @@ type PostEdge {
 
 type PostImage {
   id: ID!
+  kind: PostMediaKind!
   position: Int!
   url: String!
+}
+
+input PostMediaInput {
+  kind: PostMediaKind!
+
+  """URL devuelta por /uploads."""
+  url: String!
+}
+
+enum PostMediaKind {
+  IMAGE
+  VIDEO
 }
 
 enum PostType {

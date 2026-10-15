@@ -2,6 +2,7 @@ import { Field, ID, Int, ObjectType } from '@nestjs/graphql';
 import { EventModel } from '../../events/dto/event.model';
 import { UserModel } from '../../users/dto/user.model';
 import { PageInfo } from '../../common/pagination/page-info.type';
+import { PostMediaKind } from './post-media-kind.enum';
 import { PostType } from './post-type.enum';
 import { ReactionType } from './reaction-type.enum';
 
@@ -12,6 +13,9 @@ export class PostImageModel {
 
   @Field()
   url!: string;
+
+  @Field(() => PostMediaKind)
+  kind!: PostMediaKind;
 
   @Field(() => Int)
   position!: number;

@@ -1,4 +1,5 @@
 import { Field, ID, InputType, Int } from '@nestjs/graphql';
+import { PostMediaKind } from './post-media-kind.enum';
 import { PostType } from './post-type.enum';
 
 @InputType()
@@ -14,6 +15,15 @@ export class CreatePollInput {
 }
 
 @InputType()
+export class PostMediaInput {
+  @Field({ description: 'URL devuelta por /uploads.' })
+  url!: string;
+
+  @Field(() => PostMediaKind)
+  kind!: PostMediaKind;
+}
+
+@InputType()
 export class CreatePostInput {
   @Field(() => PostType, { defaultValue: 'POST' })
   type!: PostType;
@@ -23,6 +33,12 @@ export class CreatePostInput {
 
   @Field(() => [String], { defaultValue: [], description: 'URLs devueltas por POST /uploads.' })
   imageUrls!: string[];
+
+  @Field(() => [PostMediaInput], {
+    defaultValue: [],
+    description: 'Galería de imágenes y videos, en orden (hasta 4). Va después de imageUrls.',
+  })
+  media!: PostMediaInput[];
 
   @Field(() => ID, { nullable: true, description: 'Evento a difundir con este post.' })
   eventId?: string;

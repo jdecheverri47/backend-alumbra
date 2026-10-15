@@ -145,6 +145,38 @@ for s in alumbra-database-url alumbra-jwt-secret; do
 done
 ```
 
+### Bucket de archivos
+
+Fotos, videos y documentos van a un bucket privado. El navegador sube directo
+con una URL firmada (Cloud Run corta los cuerpos de más de 32 MB) y se leen por
+`GET /uploads/:name`, que redirige a otra URL firmada. En Cloud Run no hay llave
+privada: la librería firma con la API de IAM, por eso la service account
+necesita Token Creator sobre sí misma.
+
+```bash
+BUCKET="gs://${PROJECT_ID}-uploads"
+
+gcloud services enable iamcredentials.googleapis.com storage.googleapis.com --project "$PROJECT_ID"
+
+gcloud storage buckets create "$BUCKET" --project "$PROJECT_ID" --location "$REGION" \
+  --uniform-bucket-level-access --public-access-prevention
+
+# CORS: el PUT directo y la lectura de videos desde el frontend.
+cat > /tmp/cors.json <<'JSON'
+[{"origin":["https://iglesiaalumbra.org","https://www.iglesiaalumbra.org","http://localhost:3000"],
+  "method":["PUT","GET","HEAD"],
+  "responseHeader":["Content-Type","x-goog-content-length-range","Content-Range","Accept-Ranges"],
+  "maxAgeSeconds":3600}]
+JSON
+gcloud storage buckets update "$BUCKET" --cors-file=/tmp/cors.json
+
+gcloud storage buckets add-iam-policy-binding "$BUCKET" \
+  --member "serviceAccount:${SA}" --role roles/storage.objectAdmin
+
+gcloud iam service-accounts add-iam-policy-binding "$SA" --project "$PROJECT_ID" \
+  --member "serviceAccount:${SA}" --role roles/iam.serviceAccountTokenCreator
+```
+
 ---
 
 ## 2. Desplegar

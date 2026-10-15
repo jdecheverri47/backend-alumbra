@@ -14,6 +14,9 @@ const envSchema = z.object({
   // OAuth Client ID (tipo web) del proyecto de GCP. Sin él, POST /auth/google
   // responde 503 y el resto de la app funciona igual.
   GOOGLE_CLIENT_ID: z.string().optional(),
+  // Bucket de GCS para los archivos subidos. Sin él se guardan en la carpeta
+  // local uploads/ (desarrollo y tests).
+  GCS_BUCKET: z.string().optional(),
   // Uno o varios orígenes separados por comas: el sitio se sirve en el dominio
   // apex y en www, y son orígenes distintos para el navegador.
   CORS_ORIGIN: z

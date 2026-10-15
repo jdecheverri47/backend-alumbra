@@ -69,7 +69,10 @@ export class FeedService {
         membersOnly: data.membersOnly,
         eventId: data.eventId,
         images: {
-          create: data.imageUrls.map((url, position) => ({ url, position })),
+          create: [
+            ...data.imageUrls.map((url) => ({ url, kind: 'IMAGE' as const })),
+            ...data.media,
+          ].map((item, position) => ({ ...item, position })),
         },
         ...(data.poll
           ? {

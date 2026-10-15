@@ -562,11 +562,19 @@ model PostPollVote {
   @@index([optionId])
 }
 
+enum PostMediaKind {
+  IMAGE
+  VIDEO
+}
+
+// Imágenes y videos del post (la tabla conserva el nombre de cuando solo
+// había imágenes).
 model PostImage {
-  id       String @id @default(cuid())
+  id       String        @id @default(cuid())
   postId   String
   url      String
-  position Int    @default(0)
+  kind     PostMediaKind @default(IMAGE)
+  position Int           @default(0)
 
   post Post @relation(fields: [postId], references: [id])
 

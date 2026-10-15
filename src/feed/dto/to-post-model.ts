@@ -30,7 +30,7 @@ export function toPostModel(post: PostRow, viewer: AuthenticatedUser): PostModel
     body: post.body,
     author: toUserModel(post.author),
     event: event ? toEventModel(event) : null,
-    images: post.images.map((i) => ({ id: i.id, url: i.url, position: i.position })),
+    images: post.images.map((i) => ({ id: i.id, url: i.url, kind: i.kind, position: i.position })),
     pinnedAt: post.pinnedAt,
     membersOnly: post.membersOnly,
     createdAt: post.createdAt,
