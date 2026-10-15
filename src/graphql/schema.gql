@@ -26,6 +26,12 @@ enum AccessRequestStatus {
   REJECTED
 }
 
+input AddFollowUpInput {
+  kind: FollowUpKind! = LLAMADA
+  newcomerId: ID!
+  note: String!
+}
+
 input AddSessionMaterialInput {
   sessionId: ID!
   title: String!
@@ -294,6 +300,14 @@ type FeedPermissions {
   canSeeMembersOnly: Boolean!
 }
 
+enum FollowUpKind {
+  ENCUENTRO
+  LLAMADA
+  MENSAJE
+  OTRO
+  VISITA
+}
+
 type Group {
   archivedAt: DateTime
 
@@ -427,7 +441,12 @@ type Ministry {
   createdAt: DateTime!
   description: String
   id: ID!
+
+  """El equipo. Lo ven pastores y quienes sirven en el ministerio."""
   members(includeLeft: Boolean! = false, role: MinistryRole): [MinistryMembership!]!
+
+  """El rol de quien consulta en este ministerio; null si no sirve en él."""
+  myRole: MinistryRole
   name: String!
   slug: String!
 }
@@ -449,6 +468,7 @@ enum MinistryRole {
 type Mutation {
   """Deja (o actualiza) mi observación sobre el candidato."""
   addChurchObservation(body: String!, journeyId: ID!): Boolean!
+  addNewcomerFollowUp(input: AddFollowUpInput!): NewcomerFollowUp!
   addPostComment(body: String!, postId: ID!): PostComment!
   addSessionMaterial(input: AddSessionMaterialInput!): SessionMaterial!
   addUserToGroup(input: AddUserToGroupInput!): GroupMembership!
@@ -466,6 +486,9 @@ type Mutation {
 
   """Asigna a una cohorte de la Ruta."""
   assignJourneyToRuta(groupId: ID!, id: ID!): MembershipJourney!
+
+  """Asigna (o quita, con userId nulo) el responsable del seguimiento."""
+  assignNewcomer(id: ID!, userId: ID): Newcomer!
   cancelGroupSession(id: ID!, note: String): GroupSession!
   certifyCourseCompletion(courseId: ID!, userId: ID!): CourseCompletion!
 
@@ -489,6 +512,7 @@ type Mutation {
   """Aplaza al candidato a una próxima ruta."""
   deferJourney(id: ID!, notes: String): MembershipJourney!
   deleteEvent(id: ID!): Event!
+  deleteNewcomer(id: ID!): Newcomer!
   deletePost(id: ID!): Post!
   deletePostComment(id: ID!): PostComment!
 
@@ -503,6 +527,7 @@ type Mutation {
 
   """Crea o reemplaza mi reacción al post."""
   reactToPost(postId: ID!, type: ReactionType!): Post!
+  registerNewcomer(input: NewcomerInput!): Newcomer!
   rejectAccessRequest(id: ID!): AccessRequest!
   removePostReaction(postId: ID!): Post!
   removeSessionMaterial(id: ID!): Boolean!
@@ -517,6 +542,12 @@ type Mutation {
 
   """Agenda o reprograma la entrevista."""
   scheduleJourneyInterview(at: DateTime!, id: ID!): MembershipJourney!
+
+  """
+  Cambia el rol dentro del ministerio: coordinador (LEADER) o ministro (MEMBER).
+  """
+  setMinistryRole(membershipId: ID!, role: MinistryRole!): MinistryMembership!
+  setNewcomerStatus(id: ID!, status: NewcomerStatus!): Newcomer!
   setPostPinned(id: ID!, pinned: Boolean!): Post!
 
   """Otorga o revoca el rol de líder a un miembro."""
@@ -544,6 +575,7 @@ type Mutation {
   updateEvent(id: ID!, input: UpdateEventInput!): Event!
   updateGroup(id: ID!, input: UpdateGroupInput!): Group!
   updateMinistry(id: ID!, input: UpdateMinistryInput!): Ministry!
+  updateNewcomer(id: ID!, input: NewcomerInput!): Newcomer!
   updateUser(id: ID!, input: UpdateUserInput!): User!
 
   """Valida (o no) la entrada a la Ruta. Exige Evangelio certificado."""
@@ -551,6 +583,89 @@ type Mutation {
 
   """Vota en una encuesta. Un voto por persona."""
   votePoll(optionId: ID!): Poll!
+}
+
+type Newcomer {
+  assignedTo: User
+  birthDate: DateTime
+  consent: Boolean!
+  createdAt: DateTime!
+  email: String
+  firstName: String!
+  firstVisitAt: DateTime!
+  followUpCount: Int!
+  followUps: [NewcomerFollowUp!]!
+  fullName: String!
+  howHeard: String
+  id: ID!
+  interests: [NewcomerInterest!]!
+  invitedBy: String
+  lastFollowUpAt: DateTime
+  lastName: String!
+  neighborhood: String
+  notes: String
+  phone: String
+  prayerRequest: String
+  registeredBy: User!
+  status: NewcomerStatus!
+}
+
+input NewcomerFilterInput {
+  """Solo las asignadas a quien consulta."""
+  assignedToMe: Boolean
+
+  """Nombre, teléfono o correo."""
+  search: String
+  status: NewcomerStatus
+}
+
+type NewcomerFollowUp {
+  author: User!
+  createdAt: DateTime!
+  id: ID!
+  kind: FollowUpKind!
+  note: String!
+}
+
+input NewcomerInput {
+  birthDate: DateTime
+
+  """Aceptó que la contacten y que se guarden sus datos."""
+  consent: Boolean
+  email: String
+  firstName: String
+
+  """Por defecto, hoy."""
+  firstVisitAt: DateTime
+
+  """Cómo se enteró de la iglesia."""
+  howHeard: String
+  interests: [NewcomerInterest!]
+  invitedBy: String
+  lastName: String
+
+  """Barrio o ciudad."""
+  neighborhood: String
+  notes: String
+  phone: String
+  prayerRequest: String
+}
+
+enum NewcomerInterest {
+  BAUTISMO
+  CONOCER_MAS
+  CONSEJERIA
+  GRUPO_CONEXION
+  ORACION
+  SERVIR
+}
+
+enum NewcomerStatus {
+  CONTACTADO
+  EN_SEGUIMIENTO
+  INTEGRADO
+  NO_CONTINUA
+  NUEVO
 }
 
 type PageInfo {
@@ -725,6 +840,13 @@ type Query {
 
   """Mi proceso de membresía."""
   myJourney: MembershipJourney
+
+  """Los ministerios en los que sirve quien consulta, con su rol."""
+  myMinistries: [MinistryMembership!]!
+  newcomer(id: ID!): Newcomer!
+
+  """Personas nuevas, lo más reciente primero."""
+  newcomers(filter: NewcomerFilterInput): [Newcomer!]!
 
   """Inscritos pendientes de cohorte de un curso."""
   pendingCourseEnrollments(courseId: ID!): [CourseEnrollment!]!

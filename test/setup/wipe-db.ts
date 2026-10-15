@@ -26,6 +26,8 @@ export async function wipeDb(prisma: PrismaClient): Promise<void> {
     'CourseLesson',
     'CourseTopic',
     'Course',
+    'NewcomerFollowUp',
+    'Newcomer',
     'AccessRequest',
     'Session',
     'MinistryMembership',

@@ -17,6 +17,7 @@ import { GroupSessionsModule } from './group-sessions/group-sessions.module';
 import { GroupsModule } from './groups/groups.module';
 import { MembershipModule } from './membership/membership.module';
 import { MinistriesModule } from './ministries/ministries.module';
+import { NewcomersModule } from './newcomers/newcomers.module';
 import { PrismaModule } from './prisma/prisma.module';
 import { UploadsModule } from './uploads/uploads.module';
 import { UsersModule } from './users/users.module';
@@ -76,6 +77,7 @@ function formatGraphQLError(
     AccessRequestsModule,
     UsersModule,
     MinistriesModule,
+    NewcomersModule,
     GroupsModule,
     GroupSessionsModule,
     CoursesModule,

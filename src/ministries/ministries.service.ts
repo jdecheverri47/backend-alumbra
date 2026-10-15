@@ -1,5 +1,12 @@
-import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  ForbiddenException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { Ministry, MinistryMembership, MinistryRole, Prisma, User } from '@prisma/client';
+import { AuthenticatedUser } from '../auth/types/authenticated-user';
 import { PrismaService } from '../prisma/prisma.service';
 import { createMinistrySchema, updateMinistrySchema } from './dto/inputs.schema';
 
@@ -102,5 +109,85 @@ export class MinistriesService {
       orderBy: { joinedAt: 'desc' },
       include: { user: true },
     });
+  }
+
+  /** El rol activo de `userId` en el ministerio, o null si no pertenece. */
+  async roleOf(userId: string, ministryId: string): Promise<MinistryRole | null> {
+    const m = await this.prisma.ministryMembership.findFirst({
+      where: { userId, ministryId, leftAt: null },
+      select: { role: true },
+    });
+    return m?.role ?? null;
+  }
+
+  /**
+   * Ver un ministerio por dentro (su equipo, su módulo): pastores y quienes
+   * pertenecen a él. Un miembro solo ve los ministerios en los que está.
+   */
+  async assertCanView(me: AuthenticatedUser, ministryId: string): Promise<void> {
+    if (me.isPastor) return;
+    if (await this.roleOf(me.sub, ministryId)) return;
+    throw new ForbiddenException({
+      error: 'FORBIDDEN',
+      message: 'Solo los pastores y quienes sirven en este ministerio pueden verlo.',
+    });
+  }
+
+  /** Los ministerios activos de un usuario, con su rol. */
+  async membershipsOf(
+    userId: string,
+  ): Promise<Array<MinistryMembership & { ministry: Ministry; user: User }>> {
+    return this.prisma.ministryMembership.findMany({
+      where: { userId, leftAt: null, ministry: { archivedAt: null } },
+      include: { ministry: true, user: true },
+      orderBy: { ministry: { name: 'asc' } },
+    });
+  }
+
+  /**
+   * Sumar a alguien a un ministerio. Lo hacen pastores y coordinadores del
+   * ministerio (el guard ya lo comprobó); nombrar coordinadores es solo de
+   * pastores. Solo sirven miembros: un asistente todavía no.
+   */
+  async assignMember(
+    me: AuthenticatedUser,
+    input: { userId: string; ministryId: string; role: MinistryRole },
+  ): Promise<MinistryMembership> {
+    if (input.role === 'LEADER' && !me.isPastor) {
+      throw new ForbiddenException({
+        error: 'FORBIDDEN',
+        message: 'Solo los pastores nombran coordinadores.',
+      });
+    }
+    const user = await this.prisma.user.findUnique({ where: { id: input.userId } });
+    if (!user || user.deletedAt) throw new NotFoundException(`User ${input.userId} not found.`);
+    if (user.baseRole !== 'MIEMBRO' && !user.isPastor) {
+      throw new BadRequestException({
+        error: 'NOT_A_MEMBER',
+        message: 'Solo los miembros de la iglesia pueden servir en un ministerio.',
+      });
+    }
+    await this.findByIdOrThrow(input.ministryId);
+    return this.addMember(input);
+  }
+
+  /** Coordinador o ministro. Solo pastores. */
+  async setRole(membershipId: string, role: MinistryRole): Promise<MinistryMembership> {
+    const m = await this.prisma.ministryMembership.findUnique({ where: { id: membershipId } });
+    if (!m || m.leftAt) throw new NotFoundException(`Membership ${membershipId} not found.`);
+    return this.prisma.ministryMembership.update({ where: { id: membershipId }, data: { role } });
+  }
+
+  /** Sacar a alguien del ministerio. A un coordinador solo lo saca un pastor. */
+  async unassignMember(me: AuthenticatedUser, membershipId: string): Promise<MinistryMembership> {
+    const m = await this.prisma.ministryMembership.findUnique({ where: { id: membershipId } });
+    if (!m) throw new NotFoundException(`Membership ${membershipId} not found.`);
+    if (m.role === 'LEADER' && !me.isPastor) {
+      throw new ForbiddenException({
+        error: 'FORBIDDEN',
+        message: 'Solo los pastores pueden sacar a un coordinador.',
+      });
+    }
+    return this.removeMember(membershipId);
   }
 }

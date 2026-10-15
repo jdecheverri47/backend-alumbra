@@ -12,9 +12,37 @@ enum BaseRole {
   MIEMBRO
 }
 
+// En la interfaz: LEADER = Coordinador, MEMBER = Ministro.
 enum MinistryRole {
   LEADER
   MEMBER
+}
+
+// Seguimiento de una persona nueva que registró Acogida.
+enum NewcomerStatus {
+  NUEVO
+  CONTACTADO
+  EN_SEGUIMIENTO
+  INTEGRADO
+  NO_CONTINUA
+}
+
+// Lo que a la persona le interesa, marcado en el registro.
+enum NewcomerInterest {
+  CONOCER_MAS
+  GRUPO_CONEXION
+  BAUTISMO
+  SERVIR
+  ORACION
+  CONSEJERIA
+}
+
+enum FollowUpKind {
+  LLAMADA
+  MENSAJE
+  VISITA
+  ENCUENTRO
+  OTRO
 }
 
 enum GroupType {
@@ -106,6 +134,10 @@ model User {
   assignedJourneys       MembershipJourney[]    @relation("JourneyAssignedLeader")
   churchObservations     ChurchObservation[]
   accessRequest          AccessRequest?         @relation("AccessRequestUser")
+  registeredNewcomers    Newcomer[]             @relation("NewcomerRegisteredBy")
+  assignedNewcomers      Newcomer[]             @relation("NewcomerAssignedTo")
+  newcomerProfile        Newcomer?              @relation("NewcomerUser")
+  newcomerFollowUps      NewcomerFollowUp[]
   reviewedAccessRequests AccessRequest[]        @relation("AccessRequestReviewer")
 
   createdAt    DateTime       @default(now())
@@ -608,4 +640,63 @@ model PostComment {
   deletedAt DateTime?
 
   @@index([postId])
+}
+
+// Persona nueva que llega a la iglesia, registrada por Acogida. No es un User:
+// mucha gente llega sin correo y no va a entrar a la plataforma todavía. Si
+// después se le crea cuenta, queda enlazada en userId.
+model Newcomer {
+  id           String    @id @default(cuid())
+  firstName    String
+  lastName     String
+  phone        String?
+  email        String?
+  birthDate    DateTime?
+  // Barrio o ciudad.
+  neighborhood String?
+
+  firstVisitAt  DateTime           @default(now())
+  // Cómo se enteró de la iglesia y quién la invitó (texto libre).
+  howHeard      String?
+  invitedBy     String?
+  interests     NewcomerInterest[]
+  prayerRequest String?
+  notes         String?
+  // Aceptó que la contacten y que se guarden sus datos.
+  consent       Boolean            @default(false)
+
+  status         NewcomerStatus @default(NUEVO)
+  registeredById String
+  // Quien de Acogida le hace el seguimiento.
+  assignedToId   String?
+  userId         String?        @unique
+
+  registeredBy User               @relation("NewcomerRegisteredBy", fields: [registeredById], references: [id])
+  assignedTo   User?              @relation("NewcomerAssignedTo", fields: [assignedToId], references: [id])
+  user         User?              @relation("NewcomerUser", fields: [userId], references: [id])
+  followUps    NewcomerFollowUp[]
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  @@index([status])
+  @@index([firstVisitAt])
+  @@index([assignedToId])
+}
+
+// Cada contacto con la persona nueva: llamada, mensaje, visita…
+model NewcomerFollowUp {
+  id         String       @id @default(cuid())
+  newcomerId String
+  authorId   String
+  kind       FollowUpKind @default(LLAMADA)
+  note       String
+
+  newcomer Newcomer @relation(fields: [newcomerId], references: [id])
+  author   User     @relation(fields: [authorId], references: [id])
+
+  createdAt DateTime @default(now())
+
+  @@index([newcomerId])
 }

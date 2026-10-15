@@ -64,6 +64,8 @@ describe('Spec A happy path (e2e)', () => {
     const userId = createResp.body.data.createUser.id;
     expect(createResp.body.data.createUser.email).toBe('e2e@alumbra.test');
     expect(createResp.body.data.createUser.baseRole).toBe('ASISTENTE');
+    // Solo los miembros sirven en un ministerio.
+    await prisma.user.update({ where: { id: userId }, data: { baseRole: 'MIEMBRO' } });
 
     // Add to Acogida
     const addResp = await gql(app)
@@ -137,6 +139,7 @@ describe('Spec A happy path (e2e)', () => {
       })
       .expect(200);
     const userId = createResp.body.data.createUser.id;
+    await prisma.user.update({ where: { id: userId }, data: { baseRole: 'MIEMBRO' } });
 
     await gql(app)
       .send({
