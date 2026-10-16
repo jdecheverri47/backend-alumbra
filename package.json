@@ -23,7 +23,9 @@
     "prisma:migrate": "prisma migrate dev",
     "prisma:deploy": "prisma migrate deploy",
     "prisma:studio": "prisma studio",
-    "prisma:seed": "tsx prisma/seed.ts"
+    "prisma:seed": "tsx prisma/seed.ts",
+    "classroom:export": "tsx scripts/classroom-export.ts",
+    "classroom:import": "tsx scripts/classroom-import.ts"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"
@@ -53,6 +55,8 @@
     "zod": "^3"
   },
   "devDependencies": {
+    "@googleapis/classroom": "^19.0.1",
+    "@googleapis/drive": "^26.0.2",
     "@nestjs/cli": "^10",
     "@nestjs/schematics": "^10",
     "@nestjs/testing": "^10",

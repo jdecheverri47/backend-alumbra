@@ -138,6 +138,10 @@ model User {
   assignedNewcomers      Newcomer[]             @relation("NewcomerAssignedTo")
   newcomerProfile        Newcomer?              @relation("NewcomerUser")
   newcomerFollowUps      NewcomerFollowUp[]
+  instituteEnrollments   InstituteEnrollment[]
+  instituteItems         InstituteItem[]        @relation("InstituteItemAuthor")
+  instituteSubmissions   InstituteSubmission[]  @relation("InstituteSubmissionStudent")
+  gradedSubmissions      InstituteSubmission[]  @relation("InstituteSubmissionGrader")
   reviewedAccessRequests AccessRequest[]        @relation("AccessRequestReviewer")
 
   createdAt    DateTime       @default(now())
@@ -701,4 +705,129 @@ model NewcomerFollowUp {
   createdAt DateTime @default(now())
 
   @@index([newcomerId])
+}
+
+// ---------------------------------------------------------------------------
+// Instituto Bíblico: un aula al estilo de Classroom. Módulos (materias) con
+// publicaciones (materiales, tareas, exámenes), alumnos y profesores, entregas
+// y notas. Los campos classroomId permiten reimportar desde Classroom sin
+// duplicar.
+// ---------------------------------------------------------------------------
+
+enum InstituteRole {
+  STUDENT
+  TEACHER
+}
+
+enum InstituteItemKind {
+  MATERIAL
+  ASSIGNMENT
+  EXAM
+}
+
+enum InstituteAttachmentKind {
+  FILE
+  LINK
+  YOUTUBE
+  FORM
+}
+
+enum InstituteSubmissionState {
+  TURNED_IN
+  RETURNED
+}
+
+model InstituteModule {
+  id          String  @id @default(cuid())
+  order       Int
+  title       String
+  description String?
+  classroomId String? @unique
+
+  items InstituteItem[]
+
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+  archivedAt DateTime?
+
+  @@index([order])
+}
+
+model InstituteItem {
+  id          String            @id @default(cuid())
+  moduleId    String
+  kind        InstituteItemKind
+  title       String
+  description String?
+  // Puntos máximos (tareas y exámenes); null = sin nota.
+  maxPoints   Int?
+  dueAt       DateTime?
+  // null = borrador; en el futuro = programada (no la ven los alumnos aún).
+  publishAt   DateTime?
+  authorId    String
+  classroomId String?           @unique
+
+  module      InstituteModule       @relation(fields: [moduleId], references: [id])
+  author      User                  @relation("InstituteItemAuthor", fields: [authorId], references: [id])
+  attachments InstituteAttachment[]
+  submissions InstituteSubmission[]
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  @@index([moduleId])
+  @@index([publishAt])
+}
+
+model InstituteAttachment {
+  id       String                  @id @default(cuid())
+  itemId   String
+  kind     InstituteAttachmentKind
+  title    String
+  // /uploads/... o URL externa.
+  url      String
+  mimeType String?
+  position Int                     @default(0)
+
+  item InstituteItem @relation(fields: [itemId], references: [id])
+
+  @@index([itemId])
+}
+
+model InstituteEnrollment {
+  id          String        @id @default(cuid())
+  userId      String        @unique
+  role        InstituteRole @default(STUDENT)
+  classroomId String?
+  createdAt   DateTime      @default(now())
+  leftAt      DateTime?
+
+  user User @relation(fields: [userId], references: [id])
+}
+
+// Una por alumno y tarea, cuando hay algo que guardar: la entregó o tiene nota.
+model InstituteSubmission {
+  id          String                    @id @default(cuid())
+  itemId      String
+  studentId   String
+  state       InstituteSubmissionState?
+  turnedInAt  DateTime?
+  late        Boolean                   @default(false)
+  // La nota que ve el alumno; draftGrade solo la ven los profesores.
+  grade       Float?
+  draftGrade  Float?
+  gradedById  String?
+  gradedAt    DateTime?
+  classroomId String?                   @unique
+
+  item     InstituteItem @relation(fields: [itemId], references: [id])
+  student  User          @relation("InstituteSubmissionStudent", fields: [studentId], references: [id])
+  gradedBy User?         @relation("InstituteSubmissionGrader", fields: [gradedById], references: [id])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([itemId, studentId])
+  @@index([studentId])
 }

@@ -435,6 +435,170 @@ type ImportRowResult {
   ministries: [String!]!
 }
 
+type InstituteAccess {
+  """Profesor o pastor: administra el instituto."""
+  canManage: Boolean!
+
+  """Puede entrar (inscrito o pastor)."""
+  canView: Boolean!
+
+  """null si no está inscrito."""
+  role: InstituteRole
+}
+
+type InstituteAttachment {
+  id: ID!
+  kind: InstituteAttachmentKind!
+  mimeType: String
+  title: String!
+  url: String!
+}
+
+input InstituteAttachmentInput {
+  kind: InstituteAttachmentKind!
+  mimeType: String
+  title: String!
+
+  """/uploads/... o URL http(s)."""
+  url: String!
+}
+
+enum InstituteAttachmentKind {
+  FILE
+  FORM
+  LINK
+  YOUTUBE
+}
+
+input InstituteEnrollInput {
+  role: InstituteRole! = STUDENT
+  userIds: [ID!]!
+}
+
+type InstituteEnrollment {
+  createdAt: DateTime!
+  id: ID!
+  role: InstituteRole!
+  user: User!
+}
+
+type InstituteGradeCell {
+  draftGrade: Float
+  grade: Float
+  itemId: ID!
+  late: Boolean!
+  state: InstituteSubmissionState
+}
+
+input InstituteGradeInput {
+  """null borra la nota."""
+  grade: Float
+  itemId: ID!
+
+  """true = el alumno la ve; false = queda como borrador."""
+  returnToStudent: Boolean!
+  studentId: ID!
+}
+
+type InstituteGradebook {
+  """Tareas y exámenes, en orden de módulo."""
+  items: [InstituteItem!]!
+  rows: [InstituteGradebookRow!]!
+}
+
+type InstituteGradebookRow {
+  """Solo las tareas con algo guardado."""
+  cells: [InstituteGradeCell!]!
+  student: User!
+}
+
+type InstituteItem {
+  attachments: [InstituteAttachment!]!
+  author: User!
+  createdAt: DateTime!
+  description: String
+  dueAt: DateTime
+  id: ID!
+  kind: InstituteItemKind!
+  maxPoints: Int
+  moduleId: ID!
+
+  """La entrega de quien consulta (alumnos)."""
+  mySubmission: InstituteMySubmission
+  publishAt: DateTime
+  status: InstituteItemStatus!
+  title: String!
+
+  """Entregadas o calificadas (profesores)."""
+  turnedInCount: Int
+}
+
+input InstituteItemInput {
+  attachments: [InstituteAttachmentInput!]! = []
+  description: String
+  dueAt: DateTime
+  kind: InstituteItemKind!
+  maxPoints: Int
+  moduleId: ID!
+
+  """Cuándo la ven los alumnos. null = borrador; ahora o antes = publicada."""
+  publishAt: DateTime
+  title: String!
+}
+
+enum InstituteItemKind {
+  ASSIGNMENT
+  EXAM
+  MATERIAL
+}
+
+enum InstituteItemStatus {
+  DRAFT
+  PUBLISHED
+  SCHEDULED
+}
+
+type InstituteModule {
+  description: String
+  id: ID!
+  items: [InstituteItem!]!
+  order: Int!
+  title: String!
+}
+
+input InstituteModuleInput {
+  description: String
+  title: String!
+}
+
+type InstituteMySubmission {
+  """Solo la nota devuelta."""
+  grade: Float
+  late: Boolean!
+  state: InstituteSubmissionState
+  turnedInAt: DateTime
+}
+
+enum InstituteRole {
+  STUDENT
+  TEACHER
+}
+
+type InstituteSubmission {
+  """Nota sin devolver: solo profesores."""
+  draftGrade: Float
+  grade: Float
+  late: Boolean!
+  state: InstituteSubmissionState
+  student: User!
+  turnedInAt: DateTime
+}
+
+enum InstituteSubmissionState {
+  RETURNED
+  TURNED_IN
+}
+
 enum JourneyStage {
   APLAZADO
   ENTREGA_FINAL
@@ -562,6 +726,8 @@ type Mutation {
   createEvent(input: CreateEventInput!): Event!
   createGroup(input: CreateGroupInput!): Group!
   createGroupSession(input: CreateGroupSessionInput!): GroupSession!
+  createInstituteItem(input: InstituteItemInput!): InstituteItem!
+  createInstituteModule(input: InstituteModuleInput!): InstituteModule!
   createMinistry(input: CreateMinistryInput!): Ministry!
   createPost(input: CreatePostInput!): Post!
   createSessionAssignment(input: CreateSessionAssignmentInput!): SessionAssignment!
@@ -570,12 +736,15 @@ type Mutation {
   """Aplaza al candidato a una próxima ruta."""
   deferJourney(id: ID!, notes: String): MembershipJourney!
   deleteEvent(id: ID!): Event!
+  deleteInstituteItem(id: ID!): Boolean!
   deleteNewcomer(id: ID!): Newcomer!
   deletePost(id: ID!): Post!
   deletePostComment(id: ID!): PostComment!
 
   """Auto-inscripción al curso de Evangelio (solo no miembros)."""
   enrollInCourse(courseId: ID!): CourseEnrollment!
+  enrollInInstitute(input: InstituteEnrollInput!): [InstituteEnrollment!]!
+  gradeInstituteSubmission(input: InstituteGradeInput!): InstituteSubmission!
 
   """
   Carga personas desde una hoja. Con apply: false solo devuelve la vista previa; con true, guarda.
@@ -592,6 +761,7 @@ type Mutation {
   reactToPost(postId: ID!, type: ReactionType!): Post!
   registerNewcomer(input: NewcomerInput!): Newcomer!
   rejectAccessRequest(id: ID!): AccessRequest!
+  removeFromInstitute(enrollmentId: ID!): Boolean!
   removePostReaction(postId: ID!): Post!
   removeSessionMaterial(id: ID!): Boolean!
   removeUserFromGroup(membershipId: ID!): GroupMembership!
@@ -634,9 +804,14 @@ type Mutation {
 
   """El candidato entrega ensayo, testimonio e imagen."""
   submitFinalWork(input: SubmitFinalWorkInput!): MembershipJourney!
+
+  """El alumno marca la tarea como entregada (turnIn: false la retira)."""
+  turnInInstituteItem(itemId: ID!, turnIn: Boolean! = true): InstituteItem!
   undoCheckIn(sessionId: ID!, userId: ID!): Boolean!
   updateEvent(id: ID!, input: UpdateEventInput!): Event!
   updateGroup(id: ID!, input: UpdateGroupInput!): Group!
+  updateInstituteItem(id: ID!, input: InstituteItemInput!): InstituteItem!
+  updateInstituteModule(id: ID!, input: InstituteModuleInput!): InstituteModule!
   updateMinistry(id: ID!, input: UpdateMinistryInput!): Ministry!
   updateNewcomer(id: ID!, input: NewcomerInput!): Newcomer!
   updateUser(id: ID!, input: UpdateUserInput!): User!
@@ -878,6 +1053,12 @@ type Query {
 
   """Todos los grupos (solo pastores)."""
   groups(includeArchived: Boolean! = false): [Group!]!
+  instituteGradebook: InstituteGradebook!
+  instituteModules: [InstituteModule!]!
+  instituteRoster: [InstituteEnrollment!]!
+
+  """Cada alumno con su entrega de esta tarea. Profesores."""
+  instituteSubmissions(itemId: ID!): [InstituteSubmission!]!
 
   """Observaciones del filtro (pastores)."""
   journeyObservations(journeyId: ID!): [ChurchObservation!]!
@@ -902,6 +1083,9 @@ type Query {
 
   """Grupos donde soy miembro activo o líder."""
   myGroups: [Group!]!
+
+  """Qué puede hacer quien consulta."""
+  myInstitute: InstituteAccess!
 
   """Procesos donde soy el entrevistador."""
   myInterviews: [MembershipJourney!]!

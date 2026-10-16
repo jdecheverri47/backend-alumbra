@@ -3,6 +3,11 @@ import { PrismaClient } from '@prisma/client';
 /** Deletes all rows respecting FK order. Shared by every suite that hits the DB. */
 export async function wipeDb(prisma: PrismaClient): Promise<void> {
   const tables = [
+    'InstituteSubmission',
+    'InstituteAttachment',
+    'InstituteItem',
+    'InstituteModule',
+    'InstituteEnrollment',
     'PostReaction',
     'PostComment',
     'PostImage',

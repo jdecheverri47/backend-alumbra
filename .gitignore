@@ -26,3 +26,7 @@ prisma/*.db
 
 # Note: src/graphql/schema.gql IS committed (see scaffold spec)
 /uploads/
+
+# Migración de Classroom: credenciales OAuth y datos personales de alumnos.
+classroom-credentials.json
+/classroom-export/
