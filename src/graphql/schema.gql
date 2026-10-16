@@ -382,6 +382,59 @@ enum GroupType {
   MADUREZ
 }
 
+enum ImportAction {
+  CREATE
+  ERROR
+  UNCHANGED
+  UPDATE
+}
+
+type ImportPeopleResult {
+  """false = solo vista previa; no se guardó nada."""
+  applied: Boolean!
+  created: Int!
+  errors: Int!
+  rows: [ImportRowResult!]!
+  unchanged: Int!
+  updated: Int!
+}
+
+input ImportPersonInput {
+  baptismDate: String
+  birthDate: String
+  email: String
+  firstName: String
+  lastName: String
+
+  """dd/mm/aaaa o aaaa-mm-dd."""
+  membershipDate: String
+
+  """
+  Separados por comas; "(coordinador)" después del nombre lo nombra coordinador.
+  """
+  ministries: String
+  phone: String
+
+  """"Miembro" o "Asistente"."""
+  type: String
+}
+
+type ImportRowResult {
+  action: ImportAction!
+  baseRole: String
+  email: String
+  fullName: String!
+
+  """Posición en la lista enviada, desde 1."""
+  index: Int!
+
+  """Errores, o qué se va a cambiar."""
+  messages: [String!]!
+
+  """Ministerios que quedarían, con su rol."""
+  ministries: [String!]!
+}
+
 enum JourneyStage {
   APLAZADO
   ENTREGA_FINAL
@@ -518,6 +571,11 @@ type Mutation {
 
   """Auto-inscripción al curso de Evangelio (solo no miembros)."""
   enrollInCourse(courseId: ID!): CourseEnrollment!
+
+  """
+  Carga personas desde una hoja. Con apply: false solo devuelve la vista previa; con true, guarda.
+  """
+  importPeople(apply: Boolean! = false, rows: [ImportPersonInput!]!): ImportPeopleResult!
 
   """Abre el filtro de iglesia y publica el anuncio."""
   openChurchFilter(id: ID!): MembershipJourney!
