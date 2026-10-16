@@ -1,4 +1,4 @@
-import { Args, ID, Mutation, Parent, Query, ResolveField, Resolver } from '@nestjs/graphql';
+import { Args, ID, Int, Mutation, Parent, Query, ResolveField, Resolver } from '@nestjs/graphql';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { AuthenticatedUser } from '../auth/types/authenticated-user';
 import { NewcomerStatus } from './dto/newcomer-enums';
@@ -70,6 +70,24 @@ export class NewcomersResolver {
     @Args('userId', { type: () => ID, nullable: true }) userId: string | null,
   ): Promise<NewcomerModel> {
     return this.service.assign(me, id, userId ?? null);
+  }
+
+  @Mutation(() => [NewcomerModel], {
+    description: 'Asigna varias personas al mismo responsable (o las deja sin responsable).',
+  })
+  async assignNewcomers(
+    @CurrentUser() me: AuthenticatedUser,
+    @Args('ids', { type: () => [ID] }) ids: string[],
+    @Args('userId', { type: () => ID, nullable: true }) userId: string | null,
+  ): Promise<NewcomerModel[]> {
+    return this.service.assignMany(me, ids, userId ?? null);
+  }
+
+  @Query(() => Int, {
+    description: 'Personas asignadas a quien consulta que todavía nadie ha contactado.',
+  })
+  async myPendingNewcomers(@CurrentUser() me: AuthenticatedUser): Promise<number> {
+    return this.service.myPendingCount(me);
   }
 
   @Mutation(() => NewcomerFollowUpModel)

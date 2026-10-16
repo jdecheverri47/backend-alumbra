@@ -667,8 +667,10 @@ model Newcomer {
 
   status         NewcomerStatus @default(NUEVO)
   registeredById String
-  // Quien de Acogida le hace el seguimiento.
+  // Quien de Acogida le hace el seguimiento, y desde cuándo: si nadie la ha
+  // contactado después de esa fecha, está "por contactar".
   assignedToId   String?
+  assignedAt     DateTime?
   userId         String?        @unique
 
   registeredBy User               @relation("NewcomerRegisteredBy", fields: [registeredById], references: [id])

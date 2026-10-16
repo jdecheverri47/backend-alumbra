@@ -42,6 +42,23 @@ const NEWCOMER_INCLUDE = {
   _count: { select: { followUps: true } },
 };
 
+/** Estados en los que ya no hay a quién llamar. */
+const CLOSED: NewcomerStatus[] = ['INTEGRADO', 'NO_CONTINUA'];
+
+/**
+ * Asignada a alguien y nadie la ha contactado desde entonces. Al reasignarla
+ * vuelve a quedar pendiente, ahora para el nuevo responsable.
+ */
+function isPendingContact(
+  n: Pick<Newcomer, 'assignedToId' | 'assignedAt' | 'status'> & {
+    followUps: Array<Pick<NewcomerFollowUp, 'createdAt'>>;
+  },
+): boolean {
+  if (!n.assignedToId || !n.assignedAt || CLOSED.includes(n.status)) return false;
+  const last = n.followUps[0]?.createdAt;
+  return !last || last < n.assignedAt;
+}
+
 function toNewcomerModel(n: NewcomerRow): NewcomerModel {
   return {
     id: n.id,
@@ -64,6 +81,8 @@ function toNewcomerModel(n: NewcomerRow): NewcomerModel {
     assignedTo: n.assignedTo ? toUserModel(n.assignedTo) : null,
     followUpCount: n._count.followUps,
     lastFollowUpAt: n.followUps[0]?.createdAt ?? null,
+    assignedAt: n.assignedAt,
+    pendingContact: isPendingContact(n),
     createdAt: n.createdAt,
   };
 }
@@ -199,8 +218,24 @@ export class NewcomersService {
 
   /** Responsable del seguimiento: alguien del equipo de Acogida (o un pastor). */
   async assign(me: AuthenticatedUser, id: string, userId: string | null): Promise<NewcomerModel> {
+    const [row] = await this.assignMany(me, [id], userId);
+    return row;
+  }
+
+  /**
+   * Asigna varias personas de una vez (el coordinador reparte los registros
+   * nuevos entre su equipo). Con userId nulo, las deja sin responsable.
+   */
+  async assignMany(
+    me: AuthenticatedUser,
+    ids: string[],
+    userId: string | null,
+  ): Promise<NewcomerModel[]> {
     await this.assertCoordinator(me);
-    await this.findRow(id);
+    if (ids.length === 0) return [];
+    if (ids.length > 500) throw new BadRequestException('Se asignan hasta 500 a la vez.');
+    const found = await this.prisma.newcomer.count({ where: { id: { in: ids }, deletedAt: null } });
+    if (found !== new Set(ids).size) throw new NotFoundException('Alguna persona ya no existe.');
     if (userId) {
       const user = await this.prisma.user.findFirst({
         where: {
@@ -223,12 +258,39 @@ export class NewcomersService {
         });
       }
     }
-    const row = await this.prisma.newcomer.update({
-      where: { id },
-      data: { assignedToId: userId },
+    const now = new Date();
+    // Solo cambia la fecha a quien de verdad cambia de responsable: volver a
+    // elegir al mismo no la debe dejar otra vez "por contactar". (El OR con
+    // null es a propósito: en SQL, NOT (col = x) deja fuera los NULL.)
+    await this.prisma.newcomer.updateMany({
+      where: {
+        id: { in: ids },
+        ...(userId
+          ? { OR: [{ assignedToId: null }, { assignedToId: { not: userId } }] }
+          : { assignedToId: { not: null } }),
+      },
+      data: { assignedToId: userId, assignedAt: userId ? now : null },
+    });
+    const rows = await this.prisma.newcomer.findMany({
+      where: { id: { in: ids } },
       include: NEWCOMER_INCLUDE,
     });
-    return toNewcomerModel(row);
+    const byId = new Map(rows.map((r) => [r.id, r]));
+    return ids.map((id) => toNewcomerModel(byId.get(id)!));
+  }
+
+  /** Cuántas personas asignadas a `me` siguen sin contactar (el número del sidebar). */
+  async myPendingCount(me: AuthenticatedUser): Promise<number> {
+    const rows = await this.prisma.newcomer.findMany({
+      where: { assignedToId: me.sub, deletedAt: null, status: { notIn: CLOSED } },
+      select: {
+        assignedToId: true,
+        assignedAt: true,
+        status: true,
+        followUps: { orderBy: { createdAt: 'desc' }, take: 1, select: { createdAt: true } },
+      },
+    });
+    return rows.filter(isPendingContact).length;
   }
 
   /**

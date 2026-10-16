@@ -194,6 +194,58 @@ describe('Ministerios + Acogida (e2e)', () => {
     expect(after.body.data.newcomers).toEqual([]);
   });
 
+  it('el coordinador reparte registros y cada ministro ve sus pendientes', async () => {
+    const REGISTER = `mutation($input: NewcomerInput!) { registerNewcomer(input: $input) { id } }`;
+    const newcomerIds: string[] = [];
+    for (const name of ['Beto', 'Caro']) {
+      const res = await gql('coord', REGISTER, {
+        input: { firstName: name, lastName: 'Nuevo', consent: true },
+      });
+      newcomerIds.push(res.body.data.registerNewcomer.id);
+    }
+    const BULK = `mutation($ids: [ID!]!, $u: ID) {
+      assignNewcomers(ids: $ids, userId: $u) { id assignedAt pendingContact assignedTo { email } }
+    }`;
+    expect(errorCode(await gql('ministro', BULK, { ids: newcomerIds, u: newcomerIds[0] }))).toBe(
+      'FORBIDDEN',
+    );
+
+    const bulk = await gql('coord', BULK, { ids: newcomerIds, u: ids.ministro });
+    const assigned = bulk.body.data.assignNewcomers;
+    expect(assigned.map((n: { pendingContact: boolean }) => n.pendingContact)).toEqual([
+      true,
+      true,
+    ]);
+    const PENDING = '{ myPendingNewcomers }';
+    expect((await gql('ministro', PENDING)).body.data.myPendingNewcomers).toBe(2);
+
+    // Dejar una observación la saca de "por contactar".
+    await gql(
+      'ministro',
+      `mutation($id: ID!) { addNewcomerFollowUp(input: { newcomerId: $id, kind: MENSAJE, note: "Le escribí" }) { id } }`,
+      { id: newcomerIds[0] },
+    );
+    expect((await gql('ministro', PENDING)).body.data.myPendingNewcomers).toBe(1);
+
+    // Volver a elegir al mismo responsable no la reinicia...
+    const same = await gql('coord', BULK, { ids: [newcomerIds[0]], u: ids.ministro });
+    expect(same.body.data.assignNewcomers[0]).toMatchObject({
+      assignedAt: assigned[0].assignedAt,
+      pendingContact: false,
+    });
+    // ...pero pasarla a otra persona sí: ahora está pendiente para ella.
+    await gql('coord', BULK, { ids: [newcomerIds[1]], u: ids.coord });
+    expect((await gql('ministro', PENDING)).body.data.myPendingNewcomers).toBe(0);
+    expect((await gql('coord', PENDING)).body.data.myPendingNewcomers).toBe(1);
+
+    const cleared = await gql('coord', BULK, { ids: [newcomerIds[1]], u: null });
+    expect(cleared.body.data.assignNewcomers[0]).toMatchObject({
+      assignedTo: null,
+      assignedAt: null,
+      pendingContact: false,
+    });
+  });
+
   it('el coordinador no puede sacar a otro coordinador', async () => {
     const coordMembership = await prisma.ministryMembership.findFirstOrThrow({
       where: { userId: ids.coord, leftAt: null },

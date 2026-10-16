@@ -542,6 +542,11 @@ type Mutation {
 
   """Asigna (o quita, con userId nulo) el responsable del seguimiento."""
   assignNewcomer(id: ID!, userId: ID): Newcomer!
+
+  """
+  Asigna varias personas al mismo responsable (o las deja sin responsable).
+  """
+  assignNewcomers(ids: [ID!]!, userId: ID): [Newcomer!]!
   cancelGroupSession(id: ID!, note: String): GroupSession!
   certifyCourseCompletion(courseId: ID!, userId: ID!): CourseCompletion!
 
@@ -644,6 +649,8 @@ type Mutation {
 }
 
 type Newcomer {
+  """Cuándo se le asignó el responsable actual."""
+  assignedAt: DateTime
   assignedTo: User
   birthDate: DateTime
   consent: Boolean!
@@ -662,6 +669,9 @@ type Newcomer {
   lastName: String!
   neighborhood: String
   notes: String
+
+  """Tiene responsable y nadie la ha contactado desde que se le asignó."""
+  pendingContact: Boolean!
   phone: String
   prayerRequest: String
   registeredBy: User!
@@ -901,6 +911,9 @@ type Query {
 
   """Los ministerios en los que sirve quien consulta, con su rol."""
   myMinistries: [MinistryMembership!]!
+
+  """Personas asignadas a quien consulta que todavía nadie ha contactado."""
+  myPendingNewcomers: Int!
   newcomer(id: ID!): Newcomer!
 
   """Personas nuevas, lo más reciente primero."""

@@ -82,6 +82,14 @@ export class NewcomerModel {
   @Field(() => Date, { nullable: true })
   lastFollowUpAt?: Date | null;
 
+  @Field(() => Date, { nullable: true, description: 'Cuándo se le asignó el responsable actual.' })
+  assignedAt?: Date | null;
+
+  @Field({
+    description: 'Tiene responsable y nadie la ha contactado desde que se le asignó.',
+  })
+  pendingContact!: boolean;
+
   @Field(() => Date)
   createdAt!: Date;
 
