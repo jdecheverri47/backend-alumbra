@@ -1,6 +1,7 @@
 import { ForbiddenException, Injectable, OnModuleInit } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuthenticatedUser } from '../auth/types/authenticated-user';
+import { User } from '@prisma/client';
 import { PERMISSIONS, SYSTEM_ROLES, type ScopeType } from './catalog';
 
 /** Un permiso que alguien tiene, y de dónde le viene. */
@@ -70,7 +71,7 @@ export class PermissionsService implements OnModuleInit {
       include: {
         ministryMemberships: { where: { leftAt: null }, include: { ministry: true } },
         instituteEnrollments: { where: { leftAt: null } },
-        ledGroups: { where: { archivedAt: null }, select: { id: true }, take: 1 },
+        ledGroups: { where: { archivedAt: null }, select: { id: true, name: true } },
         roleBindings: {
           where: { revokedAt: null, role: { deletedAt: null } },
           include: { role: true },
@@ -93,6 +94,7 @@ export class PermissionsService implements OnModuleInit {
       if (m.role === 'LEADER') {
         const via = `Coordinador de ${m.ministry.name}`;
         cargo('ministerios.equipo', via, 'MINISTRY', m.ministryId);
+        cargo('ruta.iniciar', via);
         if (member) cargo('muro.publicar', via);
         if (m.ministry.slug === ACOGIDA) {
           for (const p of ['acogida.ver', 'acogida.coordinar', 'accesos.aprobar', 'personas.crear'])
@@ -102,8 +104,14 @@ export class PermissionsService implements OnModuleInit {
         cargo('acogida.ver', `Ministro de ${m.ministry.name}`);
       }
     }
-    if (member && user.isLeader) cargo('muro.publicar', 'Líder');
+    if (user.isLeader) {
+      if (member) cargo('muro.publicar', 'Líder');
+      cargo('ruta.entrevistar', 'Líder');
+    }
     if (member && user.ledGroups.length > 0) cargo('muro.publicar', 'Líder de grupo');
+    // Cada líder administra su propio grupo (solo ese).
+    for (const g of user.ledGroups)
+      cargo('grupos.administrar', `Líder de ${g.name}`, 'GROUP', g.id);
     if (user.instituteEnrollments.some((e) => e.role === 'TEACHER')) {
       cargo('instituto.administrar', 'Profesor del instituto');
     }
@@ -137,6 +145,32 @@ export class PermissionsService implements OnModuleInit {
         g.permission === permission &&
         (g.scopeType === 'CHURCH' ||
           (scope && g.scopeType === scope.type && g.scopeId === scope.id)),
+    );
+  }
+
+  /**
+   * Sobre qué ministerios o grupos tiene `me` un permiso: `all` si lo tiene para
+   * toda la iglesia; si no, los ids concretos. Sirve para filtrar listas.
+   */
+  async scopeOf(
+    me: AuthenticatedUser,
+    permission: string,
+    type: 'MINISTRY' | 'GROUP',
+  ): Promise<{ all: boolean; ids: string[] }> {
+    if (me.isPastor) return { all: true, ids: [] };
+    const grants = (await this.grantsOf(me.sub)).filter((g) => g.permission === permission);
+    return {
+      all: grants.some((g) => g.scopeType === 'CHURCH'),
+      ids: grants.filter((g) => g.scopeType === type && g.scopeId).map((g) => g.scopeId!),
+    };
+  }
+
+  /** `can` para otra persona (p. ej. si alguien puede ser entrevistador). */
+  userCan(user: User, permission: string, scope?: Scope): Promise<boolean> {
+    return this.can(
+      { sub: user.id, email: user.email, isPastor: user.isPastor, baseRole: user.baseRole, user },
+      permission,
+      scope,
     );
   }
 

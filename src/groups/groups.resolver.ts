@@ -1,6 +1,6 @@
 import { Args, ID, Mutation, Parent, Query, ResolveField, Resolver } from '@nestjs/graphql';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
-import { RequirePastor } from '../auth/decorators/require-pastor.decorator';
+import { RequirePermission } from '../permissions/require-permission.decorator';
 import { AuthenticatedUser } from '../auth/types/authenticated-user';
 import { AddUserToGroupInput } from './dto/add-user-to-group.input';
 import { CreateGroupInput } from './dto/create-group.input';
@@ -16,7 +16,7 @@ export class GroupsResolver {
 
   @Query(() => [GroupModel], { description: 'Grupos donde soy miembro activo o líder.' })
   async myGroups(@CurrentUser() me: AuthenticatedUser): Promise<GroupModel[]> {
-    const groups = await this.groupsService.myGroups(me.sub);
+    const groups = await this.groupsService.myGroups(me);
     return groups.map(toGroupModel);
   }
 
@@ -28,8 +28,8 @@ export class GroupsResolver {
     return toGroupModel(await this.groupsService.findForViewer(me, id));
   }
 
-  @RequirePastor()
-  @Query(() => [GroupModel], { description: 'Todos los grupos (solo pastores).' })
+  @RequirePermission('grupos.ver_todos')
+  @Query(() => [GroupModel], { description: 'Todos los grupos ("Ver todos los grupos").' })
   async groups(
     @Args('includeArchived', { defaultValue: false }) includeArchived: boolean,
   ): Promise<GroupModel[]> {
@@ -38,7 +38,7 @@ export class GroupsResolver {
   }
 
   @Query(() => [RutaCohortOverviewModel], {
-    description: 'Cohortes de la Ruta con su estado. Pastores: todas; líderes: las suyas.',
+    description: 'Cohortes de la Ruta con su estado: todas o las que administro.',
   })
   async rutaCohorts(@CurrentUser() me: AuthenticatedUser): Promise<RutaCohortOverviewModel[]> {
     const rows = await this.groupsService.rutaCohortOverviews(me);
@@ -51,7 +51,7 @@ export class GroupsResolver {
     return rows.map(toGroupMembershipModel);
   }
 
-  @RequirePastor()
+  @RequirePermission('grupos.crear')
   @Mutation(() => GroupModel)
   async createGroup(
     @Args('input') input: CreateGroupInput,
@@ -60,7 +60,7 @@ export class GroupsResolver {
     return toGroupModel(await this.groupsService.create(me, input));
   }
 
-  // Pastor o líder del grupo (validado en el service).
+  // Quien administra el grupo (validado en el service).
   @Mutation(() => GroupModel)
   async updateGroup(
     @Args('id', { type: () => ID }) id: string,
@@ -70,7 +70,7 @@ export class GroupsResolver {
     return toGroupModel(await this.groupsService.updateById(me, id, input));
   }
 
-  // Líder del grupo o pastor (validado en el service).
+  // Quien administra el grupo (validado en el service).
   @Mutation(() => GroupModel, { description: 'Cierra el grupo una vez completado.' })
   async archiveGroup(
     @Args('id', { type: () => ID }) id: string,
@@ -79,13 +79,13 @@ export class GroupsResolver {
     return toGroupModel(await this.groupsService.archive(me, id));
   }
 
-  @RequirePastor()
+  @RequirePermission('grupos.crear')
   @Mutation(() => GroupModel, { description: 'Reabre un grupo cerrado.' })
   async reopenGroup(@Args('id', { type: () => ID }) id: string): Promise<GroupModel> {
     return toGroupModel(await this.groupsService.reopen(id));
   }
 
-  // Pastor o líder del grupo (validado en el service).
+  // Quien administra el grupo (validado en el service).
   @Mutation(() => GroupMembershipModel)
   async addUserToGroup(
     @Args('input') input: AddUserToGroupInput,
@@ -94,7 +94,7 @@ export class GroupsResolver {
     return toGroupMembershipModel(await this.groupsService.addMember(me, input));
   }
 
-  // Pastor o líder del grupo (validado en el service).
+  // Quien administra el grupo (validado en el service).
   @Mutation(() => GroupMembershipModel)
   async removeUserFromGroup(
     @Args('membershipId', { type: () => ID }) membershipId: string,

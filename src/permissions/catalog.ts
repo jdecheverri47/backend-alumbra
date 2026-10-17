@@ -125,6 +125,56 @@ export const PERMISSION_MODULES: PermissionModule[] = [
     ],
   },
   {
+    key: 'grupos',
+    label: 'Grupos, cursos y Ruta',
+    permissions: [
+      {
+        key: 'grupos.crear',
+        label: 'Crear grupos',
+        description: 'Abrir grupos de madurez, conexión y cohortes, y reabrir los cerrados.',
+        scopes: ['CHURCH'],
+      },
+      {
+        key: 'grupos.ver_todos',
+        label: 'Ver todos los grupos',
+        description: 'Ver cualquier grupo, aunque no sea suyo.',
+        scopes: ['CHURCH'],
+      },
+      {
+        key: 'grupos.administrar',
+        label: 'Administrar grupos',
+        description:
+          'Editar y cerrar el grupo, sumar y sacar personas y llevar sus clases: asistencia, material y tareas.',
+        scopes: ['CHURCH', 'GROUP'],
+      },
+      {
+        key: 'cursos.administrar',
+        label: 'Administrar cursos',
+        description: 'Ubicar inscripciones y certificar cursos de cualquier grupo.',
+        scopes: ['CHURCH'],
+      },
+      {
+        key: 'ruta.iniciar',
+        label: 'Registrar pre-entrevistas',
+        description: 'Empezar el proceso de membresía de alguien.',
+        scopes: ['CHURCH'],
+      },
+      {
+        key: 'ruta.entrevistar',
+        label: 'Acompañar la Ruta',
+        description: 'Ser entrevistador o líder asignado de candidatos y ver su expediente.',
+        scopes: ['CHURCH'],
+      },
+      {
+        key: 'ruta.administrar',
+        label: 'Administrar la Ruta',
+        description:
+          'Ver todos los procesos, notas internas, filtro de la iglesia, observaciones y pacto.',
+        scopes: ['CHURCH'],
+      },
+    ],
+  },
+  {
     key: 'instituto',
     label: 'Instituto Bíblico',
     permissions: [
@@ -210,6 +260,30 @@ export const SYSTEM_ROLES: Array<{
     name: 'Equipo de Acogida',
     description: 'Registra personas nuevas y deja observaciones.',
     permissions: ['acogida.ver'],
+  },
+  {
+    key: 'coordinador-grupos',
+    name: 'Coordinador de grupos',
+    description: 'Abre y administra todos los grupos y certifica cursos.',
+    permissions: ['grupos.crear', 'grupos.ver_todos', 'grupos.administrar', 'cursos.administrar'],
+  },
+  {
+    key: 'colider-grupo',
+    name: 'Co-líder de grupo',
+    description: 'Ayuda a llevar un grupo como su líder. Se da sobre el grupo.',
+    permissions: ['grupos.administrar'],
+  },
+  {
+    key: 'equipo-ruta',
+    name: 'Equipo de la Ruta',
+    description: 'Registra pre-entrevistas y acompaña candidatos.',
+    permissions: ['ruta.iniciar', 'ruta.entrevistar'],
+  },
+  {
+    key: 'administrador-ruta',
+    name: 'Administrador de la Ruta',
+    description: 'Lleva todo el proceso de membresía: filtro, observaciones y pacto.',
+    permissions: ['ruta.iniciar', 'ruta.entrevistar', 'ruta.administrar'],
   },
   {
     key: 'director-instituto',

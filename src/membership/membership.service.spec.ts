@@ -7,6 +7,7 @@ import { AuthenticatedUser } from '../auth/types/authenticated-user';
 import { CoursesService } from '../courses/courses.service';
 import { GroupSessionsService } from '../group-sessions/group-sessions.service';
 import { GroupsService } from '../groups/groups.service';
+import { PermissionsService } from '../permissions/permissions.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { MembershipService } from './membership.service';
 
@@ -24,6 +25,7 @@ describe('Membership pipeline (integration)', () => {
   let groups: GroupsService;
   let sessions: GroupSessionsService;
   let prisma: PrismaService;
+  let permissions: PermissionsService;
 
   let pastor: User;
   let entrevistador: User; // líder de acogida, no pastor
@@ -80,9 +82,11 @@ describe('Membership pipeline (integration)', () => {
         GroupsService,
         GroupSessionsService,
         PrismaService,
+        PermissionsService,
       ],
     }).compile();
     membership = moduleRef.get(MembershipService);
+    permissions = moduleRef.get(PermissionsService);
     courses = moduleRef.get(CoursesService);
     groups = moduleRef.get(GroupsService);
     sessions = moduleRef.get(GroupSessionsService);
@@ -311,6 +315,7 @@ describe('Membership pipeline (integration)', () => {
 
     // Con rol de líder sí (sin notas internas); el candidato ve el suyo.
     await prisma.user.update({ where: { id: miembro.id }, data: { isLeader: true } });
+    permissions.invalidate(miembro.id);
     const leaderUser = await prisma.user.findUniqueOrThrow({ where: { id: miembro.id } });
     const asLeader = await membership.journeyOf(asAuth(leaderUser), candidato.id);
     expect(asLeader?.stage).toBe('PRE_ENTREVISTA');
@@ -486,7 +491,7 @@ describe('Membership pipeline (integration)', () => {
       data: { email: 'raso@x.com', firstName: 'R', lastName: 'S', baseRole: 'MIEMBRO' },
     });
     await expect(courses.pendingEnrollments(asAuth(raso), evangelioCourseId)).rejects.toThrow(
-      /pastores|líderes/i,
+      /cohorte/i,
     );
 
     // Lo mueve a su cohorte: queda en el grupo y sale de pendientes.

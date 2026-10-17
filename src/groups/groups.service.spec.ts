@@ -3,6 +3,7 @@ import { PrismaClient, User } from '@prisma/client';
 import { wipeDb } from '../../test/setup/wipe-db';
 import { requireLocalDb } from '../../test/setup/require-local-db';
 import { AuthenticatedUser } from '../auth/types/authenticated-user';
+import { PermissionsService } from '../permissions/permissions.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { GroupsService } from './groups.service';
 
@@ -43,7 +44,7 @@ describe('GroupsService', () => {
   beforeAll(async () => {
     requireLocalDb();
     const moduleRef = await Test.createTestingModule({
-      providers: [GroupsService, PrismaService],
+      providers: [GroupsService, PrismaService, PermissionsService],
     }).compile();
     service = moduleRef.get(GroupsService);
     prisma = moduleRef.get(PrismaService);
@@ -140,12 +141,12 @@ describe('GroupsService', () => {
       groupId: madurez.id,
     });
 
-    expect((await service.myGroups(miembro.id)).map((g) => g.id)).toEqual([madurez.id]);
-    expect((await service.myGroups(pastor.id)).map((g) => g.id)).toEqual([madurez.id]);
+    expect((await service.myGroups(asAuth(miembro))).map((g) => g.id)).toEqual([madurez.id]);
+    expect((await service.myGroups(asAuth(pastor))).map((g) => g.id)).toEqual([madurez.id]);
 
     const removed = await service.removeMember(asAuth(pastor), membership.id);
     expect(removed.leftAt).not.toBeNull();
-    expect(await service.myGroups(miembro.id)).toHaveLength(0);
+    expect(await service.myGroups(asAuth(miembro))).toHaveLength(0);
   });
 
   it('cerrar grupo: el líder o un pastor lo cierran; un miembro no; el pastor reabre', async () => {
@@ -160,7 +161,7 @@ describe('GroupsService', () => {
     const closed = await service.archive(asAuth(miembro), conexion.id);
     expect(closed.archivedAt).not.toBeNull();
     // Cerrado: sale de myGroups y no acepta nuevos integrantes.
-    expect(await service.myGroups(miembro.id)).toHaveLength(0);
+    expect(await service.myGroups(asAuth(miembro))).toHaveLength(0);
     await expect(
       service.addMember(asAuth(miembro), { userId: asistente.id, groupId: conexion.id }),
     ).rejects.toThrow(/archivado/i);

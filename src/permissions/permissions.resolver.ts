@@ -10,6 +10,7 @@ import {
   RoleBindingModel,
   RoleInput,
   RoleModel,
+  ScopeOptionModel,
 } from './dto/permissions.models';
 import { PermissionsAdminService } from './permissions-admin.service';
 import { PermissionsService } from './permissions.service';
@@ -41,6 +42,14 @@ export class PermissionsResolver {
   @Query(() => [RoleModel])
   roles(): Promise<RoleModel[]> {
     return this.admin.roles();
+  }
+
+  @RequirePermission(ADMIN)
+  @Query(() => [ScopeOptionModel], {
+    description: 'Grupos abiertos sobre los que se puede dar un rol (p. ej. co-líder).',
+  })
+  permissionGroupOptions(): Promise<ScopeOptionModel[]> {
+    return this.admin.groupOptions();
   }
 
   @RequirePermission(ADMIN)

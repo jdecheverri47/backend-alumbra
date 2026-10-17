@@ -28,6 +28,17 @@ export class PermissionModuleModel {
   permissions!: PermissionDefModel[];
 }
 
+@ObjectType('ScopeOption', {
+  description: 'Un ministerio o grupo sobre el que se puede dar un rol.',
+})
+export class ScopeOptionModel {
+  @Field(() => ID)
+  id!: string;
+
+  @Field()
+  name!: string;
+}
+
 @ObjectType('Role')
 export class RoleModel {
   @Field(() => ID)

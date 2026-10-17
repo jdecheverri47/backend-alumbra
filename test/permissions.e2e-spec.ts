@@ -55,6 +55,8 @@ describe('Permisos (e2e)', () => {
       ['secre', false],
       ['delegado', false],
       ['otro', false],
+      ['colider', false],
+      ['equipo', false],
     ] as const) {
       const email = `${key}@alumbra.test`;
       ids[key] = (await createUserWithPassword(prisma, { email, password: PASSWORD, isPastor })).id;
@@ -199,5 +201,82 @@ describe('Permisos (e2e)', () => {
     expect(log.body.data.permissionAudit.map((e: { action: string }) => e.action)).toEqual(
       expect.arrayContaining(['ROLE_CREATE', 'REVOKE', 'GRANT']),
     );
+  });
+
+  it('co-líder: "Administrar grupos" dado sobre un grupo vale solo para ese grupo', async () => {
+    const [uno, dos] = await Promise.all(
+      ['Conexión Norte', 'Conexión Sur'].map((name) =>
+        prisma.group.create({ data: { type: 'CONEXION', name, leaderId: ids.pastor } }),
+      ),
+    );
+    const UPDATE = `mutation($id: ID!) { updateGroup(id: $id, input: { location: "Casa" }) { id location } }`;
+    expect(errorCode(await gql('colider', UPDATE, { id: uno.id }))).toBe('FORBIDDEN');
+
+    const granted = await grant('pastor', ids.colider, roles['colider-grupo'], {
+      type: 'GROUP',
+      id: uno.id,
+    });
+    expect(granted.body.data.grantRole.scopeName).toBe('Conexión Norte');
+
+    expect((await gql('colider', UPDATE, { id: uno.id })).body.data.updateGroup.location).toBe(
+      'Casa',
+    );
+    expect(errorCode(await gql('colider', UPDATE, { id: dos.id }))).toBe('FORBIDDEN');
+    // Lo ve entre sus grupos, pero no la lista de todos ni puede abrir grupos.
+    const mine = await gql('colider', '{ myGroups { id } }');
+    expect(mine.body.data.myGroups).toEqual([{ id: uno.id }]);
+    expect(errorCode(await gql('colider', '{ groups { id } }'))).toBe('FORBIDDEN');
+    expect(
+      errorCode(
+        await gql(
+          'colider',
+          `mutation { createGroup(input: { type: CONEXION, name: "Otro" }) { id } }`,
+        ),
+      ),
+    ).toBe('FORBIDDEN');
+    // "Crear grupos" no aplica sobre un grupo: el rol de coordinador ahí solo deja administrarlo.
+    const coord = await grant('pastor', ids.colider, roles['coordinador-grupos'], {
+      type: 'GROUP',
+      id: dos.id,
+    });
+    expect(coord.body.data.grantRole.scopeName).toBe('Conexión Sur');
+    expect((await gql('colider', UPDATE, { id: dos.id })).body.data.updateGroup.id).toBe(dos.id);
+    expect(errorCode(await gql('colider', '{ groups { id } }'))).toBe('FORBIDDEN');
+  });
+
+  it('Ruta: el equipo registra pre-entrevistas; el tablero completo es de quien la administra', async () => {
+    const candidato = await prisma.user.create({
+      data: { email: 'candidato@alumbra.test', firstName: 'Can', lastName: 'Didato' },
+    });
+    const START = `mutation($input: StartJourneyInput!) { startMembershipJourney(input: $input) { id stage } }`;
+    const BOARD = '{ membershipJourneys { id } }';
+    expect(errorCode(await gql('equipo', START, { input: { userId: candidato.id } }))).toBe(
+      'FORBIDDEN',
+    );
+
+    await grant('pastor', ids.equipo, roles['equipo-ruta']);
+    const started = await gql('equipo', START, { input: { userId: candidato.id } });
+    expect(started.body.data.startMembershipJourney.stage).toBe('PRE_ENTREVISTA');
+    // Como entrevistador ve el expediente con sus notas, pero no el tablero de todos.
+    const own = await gql('equipo', `query($id: ID!) { membershipJourneyOf(userId: $id) { id } }`, {
+      id: candidato.id,
+    });
+    expect(own.body.data.membershipJourneyOf.id).toBe(started.body.data.startMembershipJourney.id);
+    expect(errorCode(await gql('equipo', BOARD))).toBe('FORBIDDEN');
+    // Alguien del equipo puede quedar como entrevistador; una persona cualquiera, no.
+    const otro = await prisma.user.create({
+      data: { email: 'candidato2@alumbra.test', firstName: 'Otra', lastName: 'Persona' },
+    });
+    const wrong = await gql('pastor', START, {
+      input: { userId: otro.id, interviewerId: ids.otro },
+    });
+    expect(errorMessage(wrong)).toMatch(/entrevistador/);
+    const right = await gql('pastor', START, {
+      input: { userId: otro.id, interviewerId: ids.equipo },
+    });
+    expect(right.body.data.startMembershipJourney.id).toBeTruthy();
+
+    await grant('pastor', ids.equipo, roles['administrador-ruta']);
+    expect((await gql('equipo', BOARD)).body.data.membershipJourneys).toHaveLength(2);
   });
 });

@@ -6,6 +6,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { Course, CourseCompletion, CourseEnrollment, Group, Prisma, User } from '@prisma/client';
+import { PermissionsService } from '../permissions/permissions.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuthenticatedUser } from '../auth/types/authenticated-user';
 import { GroupsService } from '../groups/groups.service';
@@ -33,6 +34,7 @@ export class CoursesService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly groupsService: GroupsService,
+    private readonly permissions: PermissionsService,
   ) {}
 
   // ── Inscripciones abiertas (Evangelio) ─────────────────────────────────────
@@ -68,22 +70,16 @@ export class CoursesService {
     return rows.map((row) => this.toEnrollmentModel(row));
   }
 
-  /** Inscritos pendientes de cohorte. Pastores o líderes de cohortes del curso. */
+  /** Inscritos pendientes de cohorte: "Administrar cursos" o quien lleva una cohorte del curso. */
   async pendingEnrollments(
     me: AuthenticatedUser,
     courseId: string,
   ): Promise<CourseEnrollmentModel[]> {
-    if (!me.isPastor) {
-      const ledCohort = await this.prisma.group.findFirst({
-        where: { courseId, leaderId: me.sub, archivedAt: null },
-      });
-      if (!ledCohort) {
-        throw new ForbiddenException({
-          error: 'FORBIDDEN',
-          message: 'Solo pastores o líderes de cohortes del curso ven los inscritos.',
-        });
-      }
-    }
+    await this.assertCourseStaff(
+      me,
+      courseId,
+      'Solo quien lleva una cohorte del curso ve los inscritos.',
+    );
     const rows = await this.prisma.courseEnrollment.findMany({
       where: { courseId, placedAt: null },
       include: { user: true, course: true, placedGroup: true },
@@ -92,22 +88,16 @@ export class CoursesService {
     return rows.map((row) => this.toEnrollmentModel(row));
   }
 
-  /** Certificaciones de un curso (para marcar aprobados en una cohorte). Pastor o líder de cohorte. */
+  /** Certificaciones de un curso (para marcar aprobados en una cohorte). Mismo acceso que los inscritos. */
   async completionsByCourse(
     me: AuthenticatedUser,
     courseId: string,
   ): Promise<CourseCompletionModel[]> {
-    if (!me.isPastor) {
-      const ledCohort = await this.prisma.group.findFirst({
-        where: { courseId, leaderId: me.sub, archivedAt: null },
-      });
-      if (!ledCohort) {
-        throw new ForbiddenException({
-          error: 'FORBIDDEN',
-          message: 'Solo pastores o líderes de cohortes del curso ven las aprobaciones.',
-        });
-      }
-    }
+    await this.assertCourseStaff(
+      me,
+      courseId,
+      'Solo quien lleva una cohorte del curso ve las aprobaciones.',
+    );
     const rows = await this.prisma.courseCompletion.findMany({
       where: { courseId },
       include: { course: { include: COURSE_INCLUDE }, certifiedBy: true, user: true },
@@ -116,7 +106,7 @@ export class CoursesService {
     return rows.map((row) => ({ ...this.toCompletionModel(row), user: toUserModel(row.user) }));
   }
 
-  /** Mueve al inscrito a una cohorte (pastor, o líder de la cohorte destino). */
+  /** Mueve al inscrito a una cohorte (quien administra la cohorte destino). */
   async placeEnrollment(
     me: AuthenticatedUser,
     enrollmentId: string,
@@ -136,7 +126,7 @@ export class CoursesService {
       throw new BadRequestException('La cohorte destino debe ser una cohorte activa del curso.');
     }
 
-    // addMember valida permisos (pastor o líder de la cohorte) y las reglas del curso.
+    // addMember valida permisos (quien administra la cohorte) y las reglas del curso.
     await this.groupsService.addMember(me, { userId: enrollment.userId, groupId });
 
     const row = await this.prisma.courseEnrollment.update({
@@ -145,6 +135,24 @@ export class CoursesService {
       include: { user: true, course: true, placedGroup: true },
     });
     return this.toEnrollmentModel(row);
+  }
+
+  /** "Administrar cursos", o llevar (liderar o administrar) una cohorte abierta del curso. */
+  private async assertCourseStaff(
+    me: AuthenticatedUser,
+    courseId: string,
+    message: string,
+  ): Promise<void> {
+    if (await this.permissions.can(me, 'cursos.administrar')) return;
+    const managed = await this.permissions.scopeOf(me, 'grupos.administrar', 'GROUP');
+    const cohort = await this.prisma.group.findFirst({
+      where: {
+        courseId,
+        archivedAt: null,
+        ...(managed.all ? {} : { OR: [{ leaderId: me.sub }, { id: { in: managed.ids } }] }),
+      },
+    });
+    if (!cohort) throw new ForbiddenException({ error: 'FORBIDDEN', message });
   }
 
   private toEnrollmentModel(
@@ -176,9 +184,15 @@ export class CoursesService {
     return course;
   }
 
-  /** Parte del expediente formativo: visible solo para la propia persona, líderes y pastores. */
+  /** Parte del expediente formativo: la propia persona, quien acompaña la Ruta o administra cursos. */
   async completionsFor(me: AuthenticatedUser, userId: string): Promise<CourseCompletionModel[]> {
-    if (userId !== me.sub && !me.isPastor && !me.user.isLeader) return [];
+    if (
+      userId !== me.sub &&
+      !(await this.permissions.can(me, 'ruta.entrevistar')) &&
+      !(await this.permissions.can(me, 'cursos.administrar'))
+    ) {
+      return [];
+    }
     const rows = await this.prisma.courseCompletion.findMany({
       where: { userId },
       include: { course: { include: COURSE_INCLUDE }, certifiedBy: true },
@@ -195,9 +209,9 @@ export class CoursesService {
   }
 
   /**
-   * Certifica que una persona aprobó un curso. Pastor, o el líder de una cohorte
-   * del curso YA CERRADA a la que la persona pertenece (la aprobación se decide
-   * al cierre: puede perderse por inasistencia).
+   * Certifica que una persona aprobó un curso. "Administrar cursos", o quien
+   * lleva una cohorte del curso YA CERRADA a la que la persona pertenece (la
+   * aprobación se decide al cierre: puede perderse por inasistencia).
    */
   async certifyCompletion(
     me: AuthenticatedUser,
@@ -207,11 +221,12 @@ export class CoursesService {
     const course = await this.prisma.course.findUnique({ where: { id: courseId } });
     if (!course) throw new NotFoundException(`Course ${courseId} not found.`);
 
-    if (!me.isPastor) {
+    if (!(await this.permissions.can(me, 'cursos.administrar'))) {
+      const managed = await this.permissions.scopeOf(me, 'grupos.administrar', 'GROUP');
       const closedCohortWithStudent = await this.prisma.group.findFirst({
         where: {
           courseId,
-          leaderId: me.sub,
+          ...(managed.all ? {} : { OR: [{ leaderId: me.sub }, { id: { in: managed.ids } }] }),
           archivedAt: { not: null },
           memberships: { some: { userId, leftAt: null } },
         },
@@ -220,7 +235,7 @@ export class CoursesService {
         throw new ForbiddenException({
           error: 'FORBIDDEN',
           message:
-            'Solo un pastor, o el líder de una cohorte cerrada del curso a la que pertenezca la persona, puede aprobarla.',
+            'Solo quien administra cursos, o el líder de una cohorte cerrada del curso a la que pertenezca la persona, puede aprobarla.',
         });
       }
     }

@@ -6,6 +6,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { Group, JourneyStage, MembershipJourney, Prisma, User } from '@prisma/client';
+import { PermissionsService } from '../permissions/permissions.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuthenticatedUser } from '../auth/types/authenticated-user';
 import { EVANGELIO_SLUG, RUTA_SLUG } from '../courses/courses.service';
@@ -30,7 +31,10 @@ type JourneyRow = Prisma.MembershipJourneyGetPayload<{ include: typeof JOURNEY_I
 
 @Injectable()
 export class MembershipService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly permissions: PermissionsService,
+  ) {}
 
   // ── Queries ────────────────────────────────────────────────────────────────
 
@@ -63,8 +67,8 @@ export class MembershipService {
   }
 
   /**
-   * Expediente de una persona. Solo líderes y pastores (y la propia persona);
-   * las notas internas quedan restringidas a pastores y al entrevistador asignado.
+   * Expediente de una persona: quien acompaña la Ruta (y la propia persona).
+   * Las notas internas, solo quien administra la Ruta y el entrevistador asignado.
    */
   async journeyOf(me: AuthenticatedUser, userId: string): Promise<MembershipJourneyModel | null> {
     const row = await this.prisma.membershipJourney.findUnique({
@@ -72,8 +76,10 @@ export class MembershipService {
       include: JOURNEY_INCLUDE,
     });
     if (!row) return null;
-    const internal = me.isPastor || row.interviewerId === me.sub;
-    const mayView = internal || me.user.isLeader || row.userId === me.sub;
+    const internal =
+      row.interviewerId === me.sub || (await this.permissions.can(me, 'ruta.administrar'));
+    const mayView =
+      internal || row.userId === me.sub || (await this.permissions.can(me, 'ruta.entrevistar'));
     if (!mayView) {
       throw new ForbiddenException({ error: 'FORBIDDEN', message: 'No autorizado.' });
     }
@@ -102,7 +108,7 @@ export class MembershipService {
     };
   }
 
-  /** Observaciones con autor — solo pastores (guard en el resolver). */
+  /** Observaciones con autor — "Administrar la Ruta" (guard en el resolver). */
   async observations(journeyId: string): Promise<ChurchObservationModel[]> {
     const rows = await this.prisma.churchObservation.findMany({
       where: { journeyId },
@@ -120,20 +126,15 @@ export class MembershipService {
 
   // ── Transiciones ───────────────────────────────────────────────────────────
 
-  /** Registra la pre-entrevista. Pastor o líder de ministerio (acogida). */
+  /** Registra la pre-entrevista ("Registrar pre-entrevistas"; los líderes de ministerio la tienen). */
   async start(me: AuthenticatedUser, raw: unknown): Promise<MembershipJourneyModel> {
     const data = startJourneySchema.parse(raw);
-    if (!me.isPastor) {
-      const leadsMinistry = await this.prisma.ministryMembership.findFirst({
-        where: { userId: me.sub, role: 'LEADER', leftAt: null },
-      });
-      if (!leadsMinistry) {
-        throw new ForbiddenException({
-          error: 'FORBIDDEN',
-          message: 'Solo pastores o líderes de ministerio registran pre-entrevistas.',
-        });
-      }
-    }
+    await this.permissions.assert(
+      me,
+      'ruta.iniciar',
+      undefined,
+      'No tienes permiso para registrar pre-entrevistas.',
+    );
 
     const user = await this.prisma.user.findFirst({ where: { id: data.userId } });
     if (!user) throw new NotFoundException(`User ${data.userId} not found.`);
@@ -141,12 +142,14 @@ export class MembershipService {
       throw new BadRequestException('Esta persona ya es miembro.');
     }
 
-    // El expediente lo manejan líderes y pastores: el entrevistador debe serlo.
+    // El expediente lo maneja quien acompaña la Ruta: el entrevistador debe poder.
     if (data.interviewerId && data.interviewerId !== me.sub) {
       const interviewer = await this.prisma.user.findFirst({ where: { id: data.interviewerId } });
       if (!interviewer) throw new NotFoundException(`User ${data.interviewerId} not found.`);
-      if (!interviewer.isPastor && !interviewer.isLeader) {
-        throw new BadRequestException('El entrevistador debe ser un líder o un pastor.');
+      if (!(await this.permissions.userCan(interviewer, 'ruta.entrevistar'))) {
+        throw new BadRequestException(
+          'El entrevistador debe ser un líder, un pastor o alguien del equipo de la Ruta.',
+        );
       }
     }
 
@@ -176,7 +179,7 @@ export class MembershipService {
     at: Date,
   ): Promise<MembershipJourneyModel> {
     const journey = await this.getOrThrow(journeyId);
-    this.assertInterviewerOrPastor(me, journey);
+    await this.assertInterviewer(me, journey);
     this.assertStage(journey, ['PRE_ENTREVISTA', 'APLAZADO']);
     const row = await this.prisma.membershipJourney.update({
       where: { id: journeyId },
@@ -194,7 +197,7 @@ export class MembershipService {
     notes?: string,
   ): Promise<MembershipJourneyModel> {
     const journey = await this.getOrThrow(journeyId);
-    this.assertInterviewerOrPastor(me, journey);
+    await this.assertInterviewer(me, journey);
     this.assertStage(journey, ['PRE_ENTREVISTA', 'VALIDADO']);
     const row = await this.prisma.membershipJourney.update({
       where: { id: journeyId },
@@ -211,12 +214,12 @@ export class MembershipService {
     leaderId: string,
   ): Promise<MembershipJourneyModel> {
     const journey = await this.getOrThrow(journeyId);
-    this.assertInterviewerOrPastor(me, journey);
+    await this.assertInterviewer(me, journey);
     this.assertStage(journey, 'VALIDADO');
 
     const leader = await this.prisma.user.findFirst({ where: { id: leaderId } });
     if (!leader) throw new NotFoundException(`User ${leaderId} not found.`);
-    if (!leader.isPastor && !leader.isLeader) {
+    if (!(await this.permissions.userCan(leader, 'ruta.entrevistar'))) {
       throw new BadRequestException('Solo se puede asignar a un líder de ruta o un pastor.');
     }
 
@@ -246,7 +249,7 @@ export class MembershipService {
     notes?: string,
   ): Promise<MembershipJourneyModel> {
     const journey = await this.getOrThrow(journeyId);
-    this.assertInterviewerOrPastor(me, journey);
+    await this.assertInterviewer(me, journey);
     this.assertStage(journey, ['PRE_ENTREVISTA', 'APLAZADO']);
 
     if (approved) {
@@ -274,8 +277,8 @@ export class MembershipService {
 
   /**
    * Ubica al candidato en una cohorte de la Ruta (lo agrega al grupo).
-   * Pueden hacerlo el entrevistador, un pastor, o el líder asignado hacia
-   * una cohorte que él mismo dirige.
+   * Pueden hacerlo el entrevistador, quien administra la Ruta, o el líder
+   * asignado hacia una cohorte que él mismo administra.
    */
   async assignToRuta(
     me: AuthenticatedUser,
@@ -295,12 +298,16 @@ export class MembershipService {
     }
 
     const isAssignedLeaderPlacing =
-      journey.assignedLeaderId === me.sub && group.leaderId === me.sub;
-    if (!me.isPastor && journey.interviewerId !== me.sub && !isAssignedLeaderPlacing) {
+      journey.assignedLeaderId === me.sub && (await this.managesGroup(me, group));
+    const mayPlace =
+      journey.interviewerId === me.sub ||
+      isAssignedLeaderPlacing ||
+      (await this.permissions.can(me, 'ruta.administrar'));
+    if (!mayPlace) {
       throw new ForbiddenException({
         error: 'FORBIDDEN',
         message:
-          'Solo el entrevistador, un pastor o el líder asignado (hacia su propia cohorte) puede ubicar al candidato.',
+          'Solo el entrevistador, quien administra la Ruta o el líder asignado (hacia su propia cohorte) puede ubicar al candidato.',
       });
     }
 
@@ -322,15 +329,16 @@ export class MembershipService {
     return this.toModel(row, { includeInternal: true });
   }
 
-  /** El líder de la cohorte (o pastor) marca la Ruta como terminada. */
+  /** Quien lleva la cohorte (o administra la Ruta) marca la Ruta como terminada. */
   async completeRuta(me: AuthenticatedUser, journeyId: string): Promise<MembershipJourneyModel> {
     const journey = await this.getOrThrow(journeyId);
     this.assertStage(journey, 'EN_RUTA');
-    const leadsCohort = journey.rutaGroup && journey.rutaGroup.leaderId === me.sub;
-    if (!me.isPastor && !leadsCohort) {
+    const leadsCohort = !!journey.rutaGroup && (await this.managesGroup(me, journey.rutaGroup));
+    if (!leadsCohort && !(await this.permissions.can(me, 'ruta.administrar'))) {
       throw new ForbiddenException({
         error: 'FORBIDDEN',
-        message: 'Solo el líder de la cohorte o un pastor puede marcar la Ruta como terminada.',
+        message:
+          'Solo el líder de la cohorte o quien administra la Ruta puede marcarla como terminada.',
       });
     }
 
@@ -534,13 +542,26 @@ export class MembershipService {
     return { ...this.toModel(row, opts), rutaProgress: await this.rutaProgress(row) };
   }
 
-  private assertInterviewerOrPastor(me: AuthenticatedUser, journey: MembershipJourney): void {
-    if (!me.isPastor && journey.interviewerId !== me.sub) {
-      throw new ForbiddenException({
-        error: 'FORBIDDEN',
-        message: 'Solo el entrevistador asignado o un pastor puede hacer esto.',
-      });
-    }
+  private async assertInterviewer(
+    me: AuthenticatedUser,
+    journey: MembershipJourney,
+  ): Promise<void> {
+    if (journey.interviewerId === me.sub) return;
+    await this.permissions.assert(
+      me,
+      'ruta.administrar',
+      undefined,
+      'Solo el entrevistador asignado o quien administra la Ruta puede hacer esto.',
+    );
+  }
+
+  /** Su líder, o quien tiene "Administrar grupos" sobre el grupo (co-líder). */
+  private async managesGroup(
+    me: AuthenticatedUser,
+    group: Pick<Group, 'id' | 'leaderId'>,
+  ): Promise<boolean> {
+    if (group.leaderId === me.sub) return true;
+    return this.permissions.can(me, 'grupos.administrar', { type: 'GROUP', id: group.id });
   }
 
   private toModel(

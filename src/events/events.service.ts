@@ -29,10 +29,10 @@ export class EventsService {
     } else {
       const group = await this.prisma.group.findUnique({ where: { id: data.groupId } });
       if (!group) throw new NotFoundException(`Group ${data.groupId} not found.`);
-      if (!me.isPastor && group.leaderId !== me.sub) {
+      if (!(await this.canManageGroup(me, group))) {
         throw new ForbiddenException({
           error: 'FORBIDDEN',
-          message: 'Solo el líder del grupo o un pastor puede crear eventos del grupo.',
+          message: 'Solo el líder del grupo o quien lo administra puede crear eventos del grupo.',
         });
       }
     }
@@ -65,6 +65,7 @@ export class EventsService {
    * un asistente es como si no existieran.
    */
   async listVisible(me: AuthenticatedUser, from: Date, to: Date): Promise<EventRow[]> {
+    const managed = await this.permissions.scopeOf(me, 'grupos.administrar', 'GROUP');
     return this.prisma.event.findMany({
       where: {
         startsAt: { gte: from, lte: to },
@@ -72,6 +73,7 @@ export class EventsService {
         OR: [
           { groupId: null },
           { group: { leaderId: me.sub } },
+          { groupId: { in: managed.ids } },
           { group: { memberships: { some: { userId: me.sub, leftAt: null } } } },
         ],
       },
@@ -86,6 +88,7 @@ export class EventsService {
    * Misma regla de visibilidad que `listVisible`.
    */
   async listUndated(me: AuthenticatedUser): Promise<EventRow[]> {
+    const managed = await this.permissions.scopeOf(me, 'grupos.administrar', 'GROUP');
     return this.prisma.event.findMany({
       where: {
         startsAt: null,
@@ -93,6 +96,7 @@ export class EventsService {
         OR: [
           { groupId: null },
           { group: { leaderId: me.sub } },
+          { groupId: { in: managed.ids } },
           { group: { memberships: { some: { userId: me.sub, leftAt: null } } } },
         ],
       },
@@ -101,14 +105,25 @@ export class EventsService {
     });
   }
 
+  private async canManageGroup(
+    me: AuthenticatedUser,
+    group: { id: string; leaderId: string | null },
+  ): Promise<boolean> {
+    if (group.leaderId === me.sub) return true;
+    return this.permissions.can(me, 'grupos.administrar', { type: 'GROUP', id: group.id });
+  }
+
   private async assertCreatorOrPastor(me: AuthenticatedUser, id: string): Promise<EventRow> {
     const event = await this.prisma.event.findUnique({ where: { id }, include: EVENT_INCLUDE });
     if (!event) throw new NotFoundException(`Event ${id} not found.`);
-    // Quien lo creó; si es general, también quien puede crear eventos generales.
+    // Quien lo creó; si es general, quien puede crear eventos generales; si es
+    // de un grupo, quien lo administra.
     const mayEdit =
       event.createdById === me.sub ||
       me.isPastor ||
-      (!event.groupId && (await this.permissions.can(me, 'calendario.eventos_generales')));
+      (event.group
+        ? await this.canManageGroup(me, event.group)
+        : await this.permissions.can(me, 'calendario.eventos_generales'));
     if (!mayEdit) {
       throw new ForbiddenException({
         error: 'FORBIDDEN',

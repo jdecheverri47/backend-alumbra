@@ -1209,7 +1209,7 @@ type Query {
   """Clases de mis grupos que tocan el rango (para el calendario)."""
   groupSessionsInRange(from: DateTime!, to: DateTime!): [GroupSession!]!
 
-  """Todos los grupos (solo pastores)."""
+  """Todos los grupos ("Ver todos los grupos")."""
   groups(includeArchived: Boolean! = false): [Group!]!
 
   """
@@ -1226,16 +1226,16 @@ type Query {
   """Cada alumno con su entrega de esta tarea. Profesores."""
   instituteSubmissions(itemId: ID!): [InstituteSubmission!]!
 
-  """Observaciones del filtro (pastores)."""
+  """Observaciones del filtro ("Administrar la Ruta")."""
   journeyObservations(journeyId: ID!): [ChurchObservation!]!
 
   """The currently authenticated user."""
   me: User!
 
-  """Proceso de una persona (pastor, entrevistador o la propia persona)."""
+  """Proceso de una persona (quien acompaña la Ruta o la propia persona)."""
   membershipJourneyOf(userId: ID!): MembershipJourney
 
-  """Tablero de candidatos (pastores)."""
+  """Tablero de candidatos ("Administrar la Ruta")."""
   membershipJourneys(stage: JourneyStage): [MembershipJourney!]!
   ministries(includeArchived: Boolean! = false): [Ministry!]!
   ministry(slug: String!): Ministry
@@ -1279,6 +1279,9 @@ type Query {
   """Todos los permisos, por módulo."""
   permissionCatalog: [PermissionModule!]!
 
+  """Grupos abiertos sobre los que se puede dar un rol (p. ej. co-líder)."""
+  permissionGroupOptions: [ScopeOption!]!
+
   """Anuncios fijados, para mostrar arriba del feed."""
   pinnedAnnouncements(audience: FeedAudience! = ALL): [Post!]!
 
@@ -1297,9 +1300,7 @@ type Query {
   roleBindings(userId: ID): [RoleBinding!]!
   roles: [Role!]!
 
-  """
-  Cohortes de la Ruta con su estado. Pastores: todas; líderes: las suyas.
-  """
+  """Cohortes de la Ruta con su estado: todas o las que administro."""
   rutaCohorts: [RutaCohortOverview!]!
 
   """Eventos anunciados sin fecha definida, visibles para mí."""
@@ -1399,6 +1400,12 @@ type RutaProgress {
 
   """Clases no canceladas de la cohorte."""
   sessionsTotal: Int!
+}
+
+"""Un ministerio o grupo sobre el que se puede dar un rol."""
+type ScopeOption {
+  id: ID!
+  name: String!
 }
 
 type SessionAssignment {

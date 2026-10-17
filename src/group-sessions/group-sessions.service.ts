@@ -13,6 +13,7 @@ import {
   SessionMaterial,
   User,
 } from '@prisma/client';
+import { PermissionsService } from '../permissions/permissions.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuthenticatedUser } from '../auth/types/authenticated-user';
 import { toGroupModel } from '../groups/dto/to-group-model';
@@ -49,14 +50,17 @@ type SessionRow = Prisma.GroupSessionGetPayload<{ include: typeof SESSION_INCLUD
 
 @Injectable()
 export class GroupSessionsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly permissions: PermissionsService,
+  ) {}
 
   // ── Queries ────────────────────────────────────────────────────────────────
 
   async listByGroup(me: AuthenticatedUser, groupId: string): Promise<GroupSessionModel[]> {
     const group = await this.getGroupOrThrow(groupId);
     await this.assertViewer(me, group);
-    const privileged = this.isLeaderOrPastor(me, group);
+    const privileged = await this.canManage(me, group);
     const rows = await this.prisma.groupSession.findMany({
       where: { groupId },
       include: SESSION_INCLUDE,
@@ -68,22 +72,36 @@ export class GroupSessionsService {
   async findForViewer(me: AuthenticatedUser, id: string): Promise<GroupSessionModel> {
     const row = await this.getSessionOrThrow(id);
     await this.assertViewer(me, row.group);
-    return this.toModel(row, me, this.isLeaderOrPastor(me, row.group));
+    return this.toModel(row, me, await this.canManage(me, row.group));
   }
 
-  /** Clases de los grupos que dicto o a los que asisto (agenda personal, también pastores). */
+  /**
+   * Clases de los grupos que dicto, administro (co-líder) o a los que asisto.
+   * Es agenda personal: un pastor no ve aquí las de todos.
+   */
   async listInRange(me: AuthenticatedUser, from: Date, to: Date): Promise<GroupSessionModel[]> {
+    const managed = await this.permissions.scopeOf(me, 'grupos.administrar', 'GROUP');
     const rows = await this.prisma.groupSession.findMany({
       where: {
         group: {
-          OR: [{ leaderId: me.sub }, { memberships: { some: { userId: me.sub, leftAt: null } } }],
+          OR: [
+            { leaderId: me.sub },
+            { id: { in: managed.ids } },
+            { memberships: { some: { userId: me.sub, leftAt: null } } },
+          ],
         },
         OR: [{ startsAt: { gte: from, lte: to } }, { scheduledFor: { gte: from, lte: to } }],
       },
       include: SESSION_INCLUDE,
       orderBy: { startsAt: 'asc' },
     });
-    return rows.map((row) => this.toModel(row, me, this.isLeaderOrPastor(me, row.group)));
+    return rows.map((row) =>
+      this.toModel(
+        row,
+        me,
+        managed.all || row.group.leaderId === me.sub || managed.ids.includes(row.groupId),
+      ),
+    );
   }
 
   // ── Clases ─────────────────────────────────────────────────────────────────
@@ -95,7 +113,7 @@ export class GroupSessionsService {
       include: { course: true },
     });
     if (!group) throw new NotFoundException(`Group ${data.groupId} not found.`);
-    this.assertLeaderOrPastor(me, group);
+    await this.assertManage(me, group);
     if (group.archivedAt) {
       throw new BadRequestException('El grupo está archivado.');
     }
@@ -179,7 +197,7 @@ export class GroupSessionsService {
   async reschedule(me: AuthenticatedUser, id: string, raw: unknown): Promise<GroupSessionModel> {
     const { startsAt, note } = rescheduleSessionSchema.parse(raw);
     const session = await this.getSessionOrThrow(id);
-    this.assertLeaderOrPastor(me, session.group);
+    await this.assertManage(me, session.group);
     const row = await this.prisma.groupSession.update({
       where: { id },
       // Reprogramar una clase cancelada la reactiva.
@@ -192,7 +210,7 @@ export class GroupSessionsService {
   /** Marca la clase como dictada. */
   async complete(me: AuthenticatedUser, id: string): Promise<GroupSessionModel> {
     const session = await this.getSessionOrThrow(id);
-    this.assertLeaderOrPastor(me, session.group);
+    await this.assertManage(me, session.group);
     if (session.status === 'CANCELADA') {
       throw new BadRequestException('Una clase cancelada no se puede marcar como completada.');
     }
@@ -206,7 +224,7 @@ export class GroupSessionsService {
 
   async cancel(me: AuthenticatedUser, id: string, note?: string): Promise<GroupSessionModel> {
     const session = await this.getSessionOrThrow(id);
-    this.assertLeaderOrPastor(me, session.group);
+    await this.assertManage(me, session.group);
     const row = await this.prisma.groupSession.update({
       where: { id },
       data: { status: 'CANCELADA', note: note ?? session.note },
@@ -223,7 +241,7 @@ export class GroupSessionsService {
     userId: string,
   ): Promise<AttendanceModel> {
     const session = await this.getSessionOrThrow(sessionId);
-    this.assertLeaderOrPastor(me, session.group);
+    await this.assertManage(me, session.group);
     if (session.status === 'CANCELADA') {
       throw new BadRequestException('La clase está cancelada.');
     }
@@ -245,7 +263,7 @@ export class GroupSessionsService {
 
   async undoCheckIn(me: AuthenticatedUser, sessionId: string, userId: string): Promise<boolean> {
     const session = await this.getSessionOrThrow(sessionId);
-    this.assertLeaderOrPastor(me, session.group);
+    await this.assertManage(me, session.group);
     await this.prisma.sessionAttendance.deleteMany({ where: { sessionId, userId } });
     return true;
   }
@@ -255,7 +273,7 @@ export class GroupSessionsService {
   async addMaterial(me: AuthenticatedUser, raw: unknown): Promise<SessionMaterialModel> {
     const data = materialSchema.parse(raw);
     const session = await this.getSessionOrThrow(data.sessionId);
-    this.assertLeaderOrPastor(me, session.group);
+    await this.assertManage(me, session.group);
     const row = await this.prisma.sessionMaterial.create({
       data: { ...data, uploadedById: me.sub },
       include: { uploadedBy: true },
@@ -269,7 +287,7 @@ export class GroupSessionsService {
       include: { session: { include: { group: true } } },
     });
     if (!material) throw new NotFoundException(`Material ${materialId} not found.`);
-    this.assertLeaderOrPastor(me, material.session.group);
+    await this.assertManage(me, material.session.group);
     await this.prisma.sessionMaterial.delete({ where: { id: materialId } });
     return true;
   }
@@ -279,7 +297,7 @@ export class GroupSessionsService {
   async createAssignment(me: AuthenticatedUser, raw: unknown): Promise<SessionAssignmentModel> {
     const data = assignmentSchema.parse(raw);
     const session = await this.getSessionOrThrow(data.sessionId);
-    this.assertLeaderOrPastor(me, session.group);
+    await this.assertManage(me, session.group);
     const row = await this.prisma.sessionAssignment.create({ data });
     return {
       id: row.id,
@@ -328,21 +346,24 @@ export class GroupSessionsService {
     return session;
   }
 
-  private isLeaderOrPastor(me: AuthenticatedUser, group: Group): boolean {
-    return me.isPastor || group.leaderId === me.sub;
+  /** Su líder, o quien tiene "Administrar grupos" sobre el grupo. */
+  private async canManage(me: AuthenticatedUser, group: Group): Promise<boolean> {
+    if (group.leaderId === me.sub) return true;
+    return this.permissions.can(me, 'grupos.administrar', { type: 'GROUP', id: group.id });
   }
 
-  private assertLeaderOrPastor(me: AuthenticatedUser, group: Group): void {
-    if (!this.isLeaderOrPastor(me, group)) {
+  private async assertManage(me: AuthenticatedUser, group: Group): Promise<void> {
+    if (!(await this.canManage(me, group))) {
       throw new ForbiddenException({
         error: 'FORBIDDEN',
-        message: 'Solo el líder del grupo o un pastor puede hacer esto.',
+        message: 'Solo el líder del grupo o quien lo administra puede hacer esto.',
       });
     }
   }
 
   private async assertViewer(me: AuthenticatedUser, group: Group): Promise<void> {
-    if (this.isLeaderOrPastor(me, group)) return;
+    if (await this.canManage(me, group)) return;
+    if (await this.permissions.can(me, 'grupos.ver_todos')) return;
     const membership = await this.prisma.groupMembership.findFirst({
       where: { groupId: group.id, userId: me.sub, leftAt: null },
     });

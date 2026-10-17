@@ -6,6 +6,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { Course, Group, GroupMembership, User } from '@prisma/client';
+import { PermissionsService } from '../permissions/permissions.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuthenticatedUser } from '../auth/types/authenticated-user';
 import { addUserToGroupSchema, createGroupSchema, updateGroupSchema } from './dto/inputs.schema';
@@ -26,7 +27,16 @@ const RUTA_ELIGIBLE_STAGES = [
 
 @Injectable()
 export class GroupsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly permissions: PermissionsService,
+  ) {}
+
+  /** Su líder, o quien tiene "Administrar grupos" sobre él (co-líder, coordinación). */
+  async canManage(me: AuthenticatedUser, group: Pick<Group, 'id' | 'leaderId'>): Promise<boolean> {
+    if (group.leaderId === me.sub) return true;
+    return this.permissions.can(me, 'grupos.administrar', { type: 'GROUP', id: group.id });
+  }
 
   async create(me: AuthenticatedUser, raw: unknown): Promise<GroupWithLeader> {
     const data = createGroupSchema.parse(raw);
@@ -69,14 +79,14 @@ export class GroupsService {
   async updateById(me: AuthenticatedUser, id: string, raw: unknown): Promise<GroupWithLeader> {
     const data = updateGroupSchema.parse(raw);
     const group = await this.findByIdOrThrow(id);
-    this.assertLeaderOrPastor(me, group);
+    await this.assertManage(me, group);
     return this.prisma.group.update({ where: { id }, data, include: GROUP_INCLUDE });
   }
 
-  /** Cierra el grupo (completado). Lo puede hacer su líder o un pastor. */
+  /** Cierra el grupo (completado): quien lo administra. */
   async archive(me: AuthenticatedUser, id: string): Promise<GroupWithLeader> {
     const group = await this.findByIdOrThrow(id);
-    this.assertLeaderOrPastor(me, group);
+    await this.assertManage(me, group);
     return this.prisma.group.update({
       where: { id },
       data: { archivedAt: new Date() },
@@ -84,7 +94,7 @@ export class GroupsService {
     });
   }
 
-  /** Reabre un grupo cerrado (solo pastores, guard en el resolver). */
+  /** Reabre un grupo cerrado ("Crear grupos", guard en el resolver). */
   async reopen(id: string): Promise<GroupWithLeader> {
     await this.findByIdOrThrow(id);
     return this.prisma.group.update({
@@ -100,10 +110,11 @@ export class GroupsService {
     return group;
   }
 
-  /** Group detail: visible to active members, the leader, and pastors. */
+  /** El detalle: lo ven sus miembros, quien lo administra y quien ve todos los grupos. */
   async findForViewer(me: AuthenticatedUser, id: string): Promise<GroupWithLeader> {
     const group = await this.findByIdOrThrow(id);
-    if (me.isPastor || group.leaderId === me.sub) return group;
+    if (await this.canManage(me, group)) return group;
+    if (await this.permissions.can(me, 'grupos.ver_todos')) return group;
     const membership = await this.prisma.groupMembership.findFirst({
       where: { groupId: id, userId: me.sub, leftAt: null },
     });
@@ -116,12 +127,17 @@ export class GroupsService {
     return group;
   }
 
-  /** Groups where the user is an active member or the leader. Excludes archived. */
-  async myGroups(userId: string): Promise<GroupWithLeader[]> {
+  /** Mis grupos abiertos: los que lidero, en los que estoy y los que administro (co-líder). */
+  async myGroups(me: AuthenticatedUser): Promise<GroupWithLeader[]> {
+    const managed = await this.permissions.scopeOf(me, 'grupos.administrar', 'GROUP');
     return this.prisma.group.findMany({
       where: {
         archivedAt: null,
-        OR: [{ leaderId: userId }, { memberships: { some: { userId, leftAt: null } } }],
+        OR: [
+          { leaderId: me.sub },
+          { memberships: { some: { userId: me.sub, leftAt: null } } },
+          { id: { in: managed.ids } },
+        ],
       },
       include: GROUP_INCLUDE,
       orderBy: { name: 'asc' },
@@ -138,14 +154,19 @@ export class GroupsService {
 
   /**
    * Cohortes de la Ruta con su estado, para agrupar por líder en el tablero.
-   * Pastores ven todas; un líder solo las suyas.
+   * Quien ve o administra todos los grupos (o la Ruta) ve todas; los demás, las que administran.
    */
   async rutaCohortOverviews(me: AuthenticatedUser) {
+    const managed = await this.permissions.scopeOf(me, 'grupos.administrar', 'GROUP');
+    const seeAll =
+      managed.all ||
+      (await this.permissions.can(me, 'grupos.ver_todos')) ||
+      (await this.permissions.can(me, 'ruta.administrar'));
     const groups = await this.prisma.group.findMany({
       where: {
         archivedAt: null,
         course: { slug: RUTA_SLUG },
-        ...(me.isPastor ? {} : { leaderId: me.sub }),
+        ...(seeAll ? {} : { OR: [{ leaderId: me.sub }, { id: { in: managed.ids } }] }),
       },
       include: {
         ...GROUP_INCLUDE,
@@ -194,7 +215,7 @@ export class GroupsService {
   async addMember(me: AuthenticatedUser, raw: unknown): Promise<GroupMembership & { user: User }> {
     const { userId, groupId } = addUserToGroupSchema.parse(raw);
     const group = await this.findByIdOrThrow(groupId);
-    this.assertLeaderOrPastor(me, group);
+    await this.assertManage(me, group);
     if (group.archivedAt) {
       throw new BadRequestException('No se pueden agregar personas a un grupo archivado.');
     }
@@ -238,7 +259,7 @@ export class GroupsService {
       include: { user: true, group: { include: GROUP_INCLUDE } },
     });
     if (!membership) throw new NotFoundException(`Membership ${membershipId} not found.`);
-    this.assertLeaderOrPastor(me, membership.group);
+    await this.assertManage(me, membership.group);
     if (membership.leftAt) return membership;
     return this.prisma.groupMembership.update({
       where: { id: membershipId },
@@ -247,11 +268,11 @@ export class GroupsService {
     });
   }
 
-  private assertLeaderOrPastor(me: AuthenticatedUser, group: Group): void {
-    if (!me.isPastor && group.leaderId !== me.sub) {
+  private async assertManage(me: AuthenticatedUser, group: Group): Promise<void> {
+    if (!(await this.canManage(me, group))) {
       throw new ForbiddenException({
         error: 'FORBIDDEN',
-        message: 'Solo el líder del grupo o un pastor puede hacer esto.',
+        message: 'Solo el líder del grupo o quien lo administra puede hacer esto.',
       });
     }
   }

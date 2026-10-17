@@ -53,6 +53,14 @@ export class PermissionsAdminService {
     private readonly permissions: PermissionsService,
   ) {}
 
+  groupOptions(): Promise<Array<{ id: string; name: string }>> {
+    return this.prisma.group.findMany({
+      where: { archivedAt: null },
+      select: { id: true, name: true },
+      orderBy: { name: 'asc' },
+    });
+  }
+
   private async scopeNames(refs: Array<{ scopeType: string; scopeId?: string | null }>) {
     const ministryIds = refs
       .filter((r) => r.scopeType === 'MINISTRY' && r.scopeId)

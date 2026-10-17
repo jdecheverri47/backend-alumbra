@@ -1,6 +1,6 @@
 import { Args, Field, ID, InputType, Mutation, Query, Resolver } from '@nestjs/graphql';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
-import { RequirePastor } from '../auth/decorators/require-pastor.decorator';
+import { RequirePermission } from '../permissions/require-permission.decorator';
 import { AuthenticatedUser } from '../auth/types/authenticated-user';
 import { JourneyStage } from './dto/journey-stage.enum';
 import {
@@ -48,8 +48,10 @@ export class MembershipResolver {
     return this.membershipService.myJourney(me);
   }
 
-  @RequirePastor()
-  @Query(() => [MembershipJourneyModel], { description: 'Tablero de candidatos (pastores).' })
+  @RequirePermission('ruta.administrar')
+  @Query(() => [MembershipJourneyModel], {
+    description: 'Tablero de candidatos ("Administrar la Ruta").',
+  })
   async membershipJourneys(
     @Args('stage', { type: () => JourneyStage, nullable: true }) stage?: JourneyStage,
   ): Promise<MembershipJourneyModel[]> {
@@ -72,7 +74,7 @@ export class MembershipResolver {
 
   @Query(() => MembershipJourneyModel, {
     nullable: true,
-    description: 'Proceso de una persona (pastor, entrevistador o la propia persona).',
+    description: 'Proceso de una persona (quien acompaña la Ruta o la propia persona).',
   })
   async membershipJourneyOf(
     @Args('userId', { type: () => ID }) userId: string,
@@ -92,8 +94,10 @@ export class MembershipResolver {
     return this.membershipService.churchFilterFor(me, userId);
   }
 
-  @RequirePastor()
-  @Query(() => [ChurchObservationModel], { description: 'Observaciones del filtro (pastores).' })
+  @RequirePermission('ruta.administrar')
+  @Query(() => [ChurchObservationModel], {
+    description: 'Observaciones del filtro ("Administrar la Ruta").',
+  })
   async journeyObservations(
     @Args('journeyId', { type: () => ID }) journeyId: string,
   ): Promise<ChurchObservationModel[]> {
@@ -102,7 +106,7 @@ export class MembershipResolver {
 
   // ── Transiciones ───────────────────────────────────────────────────────────
 
-  // Pastor o líder de ministerio (validado en el service).
+  // "Registrar pre-entrevistas" (validado en el service).
   @Mutation(() => MembershipJourneyModel, { description: 'Registra la pre-entrevista.' })
   async startMembershipJourney(
     @Args('input') input: StartJourneyInput,
@@ -111,7 +115,7 @@ export class MembershipResolver {
     return this.membershipService.start(me, input);
   }
 
-  // Entrevistador o pastor (validado en el service).
+  // Entrevistador o quien administra la Ruta (validado en el service).
   @Mutation(() => MembershipJourneyModel, {
     description: 'Valida (o no) la entrada a la Ruta. Exige Evangelio certificado.',
   })
@@ -124,7 +128,7 @@ export class MembershipResolver {
     return this.membershipService.validate(me, id, approved, notes);
   }
 
-  // Entrevistador o pastor (validado en el service).
+  // Entrevistador o quien administra la Ruta (validado en el service).
   @Mutation(() => MembershipJourneyModel, { description: 'Agenda o reprograma la entrevista.' })
   async scheduleJourneyInterview(
     @Args('id', { type: () => ID }) id: string,
@@ -134,7 +138,7 @@ export class MembershipResolver {
     return this.membershipService.scheduleInterview(me, id, at);
   }
 
-  // Entrevistador o pastor (validado en el service).
+  // Entrevistador o quien administra la Ruta (validado en el service).
   @Mutation(() => MembershipJourneyModel, {
     description: 'Aplaza al candidato a una próxima ruta.',
   })
@@ -146,7 +150,7 @@ export class MembershipResolver {
     return this.membershipService.defer(me, id, notes);
   }
 
-  // Entrevistador o pastor (validado en el service).
+  // Entrevistador o quien administra la Ruta (validado en el service).
   @Mutation(() => MembershipJourneyModel, {
     description: 'Asigna el candidato a un líder de ruta; el líder decide la cohorte.',
   })
@@ -158,7 +162,7 @@ export class MembershipResolver {
     return this.membershipService.assignToLeader(me, id, leaderId);
   }
 
-  // Entrevistador, pastor o líder asignado hacia su cohorte (validado en el service).
+  // Entrevistador, quien administra la Ruta o líder asignado hacia su cohorte (en el service).
   @Mutation(() => MembershipJourneyModel, { description: 'Asigna a una cohorte de la Ruta.' })
   async assignJourneyToRuta(
     @Args('id', { type: () => ID }) id: string,
@@ -168,7 +172,7 @@ export class MembershipResolver {
     return this.membershipService.assignToRuta(me, id, groupId);
   }
 
-  // Líder de la cohorte o pastor (validado en el service).
+  // Quien lleva la cohorte o administra la Ruta (validado en el service).
   @Mutation(() => MembershipJourneyModel, { description: 'Marca la Ruta como terminada.' })
   async completeRuta(
     @Args('id', { type: () => ID }) id: string,
@@ -187,7 +191,7 @@ export class MembershipResolver {
     return this.membershipService.submitFinalWork(me, input);
   }
 
-  @RequirePastor()
+  @RequirePermission('ruta.administrar')
   @Mutation(() => MembershipJourneyModel, {
     description: 'Abre el filtro de iglesia y publica el anuncio.',
   })
@@ -208,7 +212,7 @@ export class MembershipResolver {
     return this.membershipService.addObservation(me, { journeyId, body });
   }
 
-  @RequirePastor()
+  @RequirePermission('ruta.administrar')
   @Mutation(() => MembershipJourneyModel)
   async closeChurchFilter(
     @Args('id', { type: () => ID }) id: string,
@@ -219,7 +223,7 @@ export class MembershipResolver {
     return this.membershipService.closeChurchFilter(id, passed, pastoralInterviewAt);
   }
 
-  @RequirePastor()
+  @RequirePermission('ruta.administrar')
   @Mutation(() => MembershipJourneyModel, {
     description: 'Firma del pacto: la persona pasa a ser MIEMBRO.',
   })
