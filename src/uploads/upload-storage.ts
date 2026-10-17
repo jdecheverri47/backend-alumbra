@@ -30,7 +30,12 @@ export abstract class UploadStorage {
   ): Promise<UploadTarget>;
 
   /** URL firmada para leer el archivo; null si se sirve desde el disco. */
-  abstract readUrl(name: string): Promise<string | null>;
+  /**
+   * URL firmada para leer el archivo; null si se sirve desde el disco.
+   * `hours` es cuánto dura la firma (las de los videos en una lista HLS duran
+   * más: la lista no se vuelve a pedir durante una clase de dos horas).
+   */
+  abstract readUrl(name: string, hours?: number): Promise<string | null>;
 
   /** El contenido de un archivo de texto (las listas .m3u8 de los videos); null si no existe. */
   abstract readText(name: string): Promise<string | null>;
@@ -82,21 +87,22 @@ export class GcsUploadStorage extends UploadStorage {
     }
   }
 
-  async readUrl(name: string): Promise<string> {
+  async readUrl(name: string, hours = 2): Promise<string> {
     const now = Date.now();
-    const cached = this.readCache.get(name);
-    // Margen de una hora: la URL entregada sigue sirviendo mientras el
-    // navegador la tenga cacheada (ver READ_REDIRECT_MAX_AGE).
-    if (cached && cached.expiresAt - now > 60 * 60 * 1000) return cached.url;
+    const key = `${name}|${hours}`;
+    const cached = this.readCache.get(key);
+    // Se reusa mientras le quede al menos la mitad de su vida: la URL entregada
+    // tiene que seguir sirviendo mientras el navegador la tenga cacheada.
+    if (cached && cached.expiresAt - now > (hours * 60 * 60 * 1000) / 2) return cached.url;
 
-    const expiresAt = now + 2 * 60 * 60 * 1000;
+    const expiresAt = now + hours * 60 * 60 * 1000;
     const [url] = await this.bucket.file(name).getSignedUrl({
       version: 'v4',
       action: 'read',
       expires: expiresAt,
     });
     if (this.readCache.size > 5000) this.readCache.clear();
-    this.readCache.set(name, { url, expiresAt });
+    this.readCache.set(key, { url, expiresAt });
     return url;
   }
 }

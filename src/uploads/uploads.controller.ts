@@ -24,6 +24,7 @@ import { rename, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { Transform } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
+import { gzipSync } from 'node:zlib';
 import { memoryStorage } from 'multer';
 import { z } from 'zod';
 import { Public } from '../auth/decorators/public.decorator';
@@ -47,6 +48,16 @@ const intentSchema = z.object({
  * firma, así el navegador no vuelve a preguntar en cada pantalla.
  */
 const READ_REDIRECT_MAX_AGE = 50 * 60;
+
+/** Listas ya firmadas (y comprimidas), mientras duren sus firmas. */
+/**
+ * Firma de los videos dentro de una lista. La lista se cachea ~1 h aquí y otra
+ * en el navegador, y una clase dura hasta 2-3 h: con 12 h sobra.
+ */
+const PLAYLIST_MEDIA_HOURS = 12;
+
+const playlistCache = new Map<string, { text: string; gzip: Buffer; expiresAt: number }>();
+const PLAYLIST_CACHE_MS = READ_REDIRECT_MAX_AGE * 1000;
 
 function storedName(contentType: string, filename?: string): string {
   return `${randomUUID()}${extensionFor(contentType, filename)}`;
@@ -149,9 +160,13 @@ export class UploadsController {
    */
   @Public()
   @Get(':name')
-  async read(@Param('name') name: string, @Res() res: Response): Promise<void> {
+  async read(
+    @Param('name') name: string,
+    @Req() req: Request,
+    @Res() res: Response,
+  ): Promise<void> {
     if (!STORED_NAME.test(name)) throw new NotFoundException();
-    if (name.endsWith('.m3u8')) return this.playlist(name, res);
+    if (name.endsWith('.m3u8')) return this.playlist(name, req, res);
 
     const signed = await this.storage.readUrl(name);
     if (signed) {
@@ -171,7 +186,29 @@ export class UploadsController {
    * mismo). Va directo al bucket y no por la redirección: un pedido entre
    * dominios que se redirige pierde el Origin y el bucket lo rechaza por CORS.
    */
-  private async playlist(name: string, res: Response): Promise<void> {
+  private async playlist(name: string, req: Request, res: Response): Promise<void> {
+    let entry = playlistCache.get(name);
+    if (!entry || entry.expiresAt < Date.now()) {
+      const text = await this.signPlaylist(name);
+      if (playlistCache.size > 500) playlistCache.clear();
+      // La URL firmada se repite en cada línea: comprimida pesa casi nada.
+      entry = { text, gzip: gzipSync(text), expiresAt: Date.now() + PLAYLIST_CACHE_MS };
+      playlistCache.set(name, entry);
+    }
+    res.setHeader('Content-Type', 'application/vnd.apple.mpegurl');
+    // Dura menos que las firmas que lleva adentro.
+    res.setHeader('Cache-Control', `private, max-age=${READ_REDIRECT_MAX_AGE}`);
+    res.setHeader('Vary', 'Accept-Encoding');
+    if (/\bgzip\b/.test(String(req.headers['accept-encoding'] ?? ''))) {
+      res.setHeader('Content-Encoding', 'gzip');
+      res.send(entry.gzip);
+    } else {
+      res.send(entry.text);
+    }
+  }
+
+  /** La lista con el archivo de video cambiado por su URL firmada. */
+  private async signPlaylist(name: string): Promise<string> {
     const text = await this.storage.readText(name);
     if (text === null) throw new NotFoundException();
     // Todas las líneas apuntan al mismo archivo: una sola firma por archivo.
@@ -181,7 +218,7 @@ export class UploadsController {
       if (!signed.has(ref)) {
         signed.set(
           ref,
-          this.storage.readUrl(ref).then((url) => url ?? ref),
+          this.storage.readUrl(ref, PLAYLIST_MEDIA_HOURS).then((url) => url ?? ref),
         );
       }
       return signed.get(ref)!;
@@ -196,9 +233,6 @@ export class UploadsController {
         return line && !line.startsWith('#') ? sign(line.trim()) : line;
       }),
     );
-    res.setHeader('Content-Type', 'application/vnd.apple.mpegurl');
-    // Dura menos que las firmas que lleva adentro.
-    res.setHeader('Cache-Control', `private, max-age=${READ_REDIRECT_MAX_AGE}`);
-    res.send(lines.join('\n'));
+    return lines.join('\n');
   }
 }
