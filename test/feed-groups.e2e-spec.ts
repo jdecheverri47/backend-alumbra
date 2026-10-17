@@ -448,4 +448,22 @@ describe('Feed + Groups + Events (e2e)', () => {
       { url: '/uploads/foto.jpg', kind: 'IMAGE', position: 1 },
     ]);
   });
+  it('uploads: sirve listas HLS (.m3u8) con su tipo', async () => {
+    const { writeFileSync } = await import('node:fs');
+    const { join } = await import('node:path');
+    const { UPLOAD_DIR } = await import('../src/uploads/upload-storage');
+    const name = '11111111-2222-3333-4444-555555555555.m3u8';
+    const media = '66666666-7777-8888-9999-000000000000.mp4';
+    writeFileSync(
+      join(UPLOAD_DIR, name),
+      `#EXTM3U\n#EXT-X-MAP:URI="${media}",BYTERANGE="10@0"\n#EXTINF:6,\n#EXT-X-BYTERANGE:20@10\n${media}\n#EXT-X-ENDLIST\n`,
+    );
+    const res = await request(app.getHttpServer()).get(`/uploads/${name}`).expect(200);
+    expect(res.headers['content-type']).toMatch(/application\/vnd\.apple\.mpegurl/);
+    // En disco el archivo se deja tal cual: el navegador lo pide al mismo backend.
+    expect(res.text).toContain(`\n${media}\n`);
+    await request(app.getHttpServer())
+      .get('/uploads/99999999-9999-9999-9999-999999999999.m3u8')
+      .expect(404);
+  });
 });

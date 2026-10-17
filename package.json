@@ -25,7 +25,8 @@
     "prisma:studio": "prisma studio",
     "prisma:seed": "tsx prisma/seed.ts",
     "classroom:export": "tsx scripts/classroom-export.ts",
-    "classroom:import": "tsx scripts/classroom-import.ts"
+    "classroom:import": "tsx scripts/classroom-import.ts",
+    "video:hls": "tsx scripts/video-hls.ts"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"

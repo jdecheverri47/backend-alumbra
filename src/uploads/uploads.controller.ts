@@ -151,6 +151,7 @@ export class UploadsController {
   @Get(':name')
   async read(@Param('name') name: string, @Res() res: Response): Promise<void> {
     if (!STORED_NAME.test(name)) throw new NotFoundException();
+    if (name.endsWith('.m3u8')) return this.playlist(name, res);
 
     const signed = await this.storage.readUrl(name);
     if (signed) {
@@ -161,5 +162,43 @@ export class UploadsController {
 
     if (!existsSync(join(UPLOAD_DIR, name))) throw new NotFoundException();
     res.sendFile(name, { root: UPLOAD_DIR, maxAge: '365d', immutable: true });
+  }
+
+  /**
+   * Lista de reproducción HLS de un video. El video va en un solo archivo y la
+   * lista lo pide por rangos de bytes, así que basta con cambiar su nombre por
+   * una URL firmada (en disco se deja tal cual: el navegador lo pide aquí
+   * mismo). Va directo al bucket y no por la redirección: un pedido entre
+   * dominios que se redirige pierde el Origin y el bucket lo rechaza por CORS.
+   */
+  private async playlist(name: string, res: Response): Promise<void> {
+    const text = await this.storage.readText(name);
+    if (text === null) throw new NotFoundException();
+    // Todas las líneas apuntan al mismo archivo: una sola firma por archivo.
+    const signed = new Map<string, Promise<string>>();
+    const sign = (ref: string): Promise<string> => {
+      if (!STORED_NAME.test(ref) || ref.endsWith('.m3u8')) return Promise.resolve(ref);
+      if (!signed.has(ref)) {
+        signed.set(
+          ref,
+          this.storage.readUrl(ref).then((url) => url ?? ref),
+        );
+      }
+      return signed.get(ref)!;
+    };
+
+    const lines = await Promise.all(
+      text.split('\n').map(async (line) => {
+        if (line.startsWith('#EXT-X-MAP:')) {
+          const match = /URI="([^"]+)"/.exec(line);
+          return match ? line.replace(match[1], await sign(match[1])) : line;
+        }
+        return line && !line.startsWith('#') ? sign(line.trim()) : line;
+      }),
+    );
+    res.setHeader('Content-Type', 'application/vnd.apple.mpegurl');
+    // Dura menos que las firmas que lleva adentro.
+    res.setHeader('Cache-Control', `private, max-age=${READ_REDIRECT_MAX_AGE}`);
+    res.send(lines.join('\n'));
   }
 }

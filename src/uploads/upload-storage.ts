@@ -1,7 +1,7 @@
 import { Storage, type Bucket } from '@google-cloud/storage';
 import { createHmac, timingSafeEqual } from 'node:crypto';
 import { existsSync, mkdirSync } from 'node:fs';
-import { writeFile } from 'node:fs/promises';
+import { readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
 export const UPLOAD_DIR = process.env.UPLOAD_DIR ?? join(process.cwd(), 'uploads');
@@ -31,6 +31,9 @@ export abstract class UploadStorage {
 
   /** URL firmada para leer el archivo; null si se sirve desde el disco. */
   abstract readUrl(name: string): Promise<string | null>;
+
+  /** El contenido de un archivo de texto (las listas .m3u8 de los videos); null si no existe. */
+  abstract readText(name: string): Promise<string | null>;
 }
 
 /**
@@ -67,6 +70,16 @@ export class GcsUploadStorage extends UploadStorage {
       extensionHeaders: headers,
     });
     return { uploadUrl, method: 'PUT', headers: { 'Content-Type': contentType, ...headers } };
+  }
+
+  async readText(name: string): Promise<string | null> {
+    try {
+      const [data] = await this.bucket.file(name).download();
+      return data.toString('utf8');
+    } catch (e) {
+      if ((e as { code?: number }).code === 404) return null;
+      throw e;
+    }
   }
 
   async readUrl(name: string): Promise<string> {
@@ -117,6 +130,11 @@ export class DiskUploadStorage extends UploadStorage {
 
   async readUrl(): Promise<null> {
     return null;
+  }
+
+  async readText(name: string): Promise<string | null> {
+    const path = join(UPLOAD_DIR, name);
+    return existsSync(path) ? readFile(path, 'utf8') : null;
   }
 
   /** Comprueba el token de PUT /uploads/direct; null si no vale o venció. */
