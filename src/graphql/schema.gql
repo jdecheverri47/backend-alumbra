@@ -308,6 +308,38 @@ enum FollowUpKind {
   VISITA
 }
 
+type FormGradesImport {
+  applied: Boolean!
+
+  """Coinciden con un alumno inscrito."""
+  matched: Int!
+
+  """Puntos de la tarea a los que se convierte."""
+  maxPoints: Float
+
+  """Alumnos inscritos que no respondieron."""
+  missing: Int!
+
+  """Respuestas distintas (una por correo)."""
+  responses: Int!
+
+  """Ya tenían nota devuelta y no se tocan."""
+  skippedReturned: Int!
+
+  """Correos que no son de alumnos del instituto."""
+  unmatched: [String!]!
+
+  """Se guardan (o se guardarían) ahora."""
+  updated: Int!
+}
+
+input FormResponseInput {
+  """Correo con el que respondió."""
+  email: String!
+  score: Float!
+  submittedAt: DateTime
+}
+
 type Group {
   archivedAt: DateTime
 
@@ -387,6 +419,22 @@ enum ImportAction {
   ERROR
   UNCHANGED
   UPDATE
+}
+
+input ImportFormGradesInput {
+  """false = solo vista previa."""
+  apply: Boolean! = false
+
+  """Puntaje máximo del formulario (para convertir a los de la tarea)."""
+  formTotal: Float!
+  itemId: ID!
+
+  """Reemplazar notas ya devueltas."""
+  overwriteReturned: Boolean! = false
+  responses: [FormResponseInput!]!
+
+  """true = el alumno ve la nota; false = borrador."""
+  returnToStudent: Boolean! = false
 }
 
 type ImportPeopleResult {
@@ -794,6 +842,9 @@ type Mutation {
   enrollInCourse(courseId: ID!): CourseEnrollment!
   enrollInInstitute(input: InstituteEnrollInput!): [InstituteEnrollment!]!
   gradeInstituteSubmission(input: InstituteGradeInput!): InstituteSubmission!
+
+  """Notas de un examen en Google Forms (apply: false = vista previa)."""
+  importInstituteFormGrades(input: ImportFormGradesInput!): FormGradesImport!
 
   """
   Carga personas desde una hoja. Con apply: false solo devuelve la vista previa; con true, guarda.

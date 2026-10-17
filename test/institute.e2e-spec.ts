@@ -254,4 +254,94 @@ describe('Instituto Bíblico (e2e)', () => {
       after.body.data.instituteCalendar.find((e: { title: string }) => e.title === 'Tarea 1').done,
     ).toBe(true);
   });
+  it('trae las notas de Google Forms: borrador, última respuesta y sin pisar lo devuelto', async () => {
+    const mod = await gql(
+      'profe',
+      `mutation { createInstituteModule(input: { title: "Forms" }) { id } }`,
+    );
+    const exam = await gql(
+      'profe',
+      `mutation($input: InstituteItemInput!) { createInstituteItem(input: $input) { id } }`,
+      {
+        input: {
+          moduleId: mod.body.data.createInstituteModule.id,
+          kind: 'EXAM',
+          title: 'Examen en Forms',
+          maxPoints: 20,
+          publishAt: new Date(Date.now() - 60_000).toISOString(),
+        },
+      },
+    );
+    const itemId = exam.body.data.createInstituteItem.id;
+    const IMPORT = `mutation($input: ImportFormGradesInput!) {
+      importInstituteFormGrades(input: $input) {
+        responses matched updated skippedReturned unmatched missing maxPoints applied
+      }
+    }`;
+    const responses = [
+      // Respondió dos veces: cuenta la última (36 de 40 → 18 de 20).
+      { email: 'ALUMNO@alumbra.test', score: 10, submittedAt: '2026-10-01T10:00:00Z' },
+      { email: 'alumno@alumbra.test', score: 36, submittedAt: '2026-10-01T11:00:00Z' },
+      { email: 'desconocido@gmail.com', score: 40 },
+    ];
+    const base = {
+      itemId,
+      responses,
+      formTotal: 40,
+      returnToStudent: false,
+      overwriteReturned: false,
+    };
+
+    expect(errorCode(await gql('alumno', IMPORT, { input: { ...base, apply: false } }))).toBe(
+      'FORBIDDEN',
+    );
+
+    const preview = await gql('profe', IMPORT, { input: { ...base, apply: false } });
+    expect(preview.body.data.importInstituteFormGrades).toEqual({
+      responses: 2,
+      matched: 1,
+      updated: 1,
+      skippedReturned: 0,
+      unmatched: ['desconocido@gmail.com'],
+      missing: 0,
+      maxPoints: 20,
+      applied: false,
+    });
+    const SUBS = `query($id: ID!) { instituteSubmissions(itemId: $id) { student { email } state grade draftGrade } }`;
+    expect(
+      (await gql('profe', SUBS, { id: itemId })).body.data.instituteSubmissions[0].draftGrade,
+    ).toBeNull();
+
+    await gql('profe', IMPORT, { input: { ...base, apply: true } });
+    expect(
+      (await gql('profe', SUBS, { id: itemId })).body.data.instituteSubmissions[0],
+    ).toMatchObject({
+      state: 'TURNED_IN',
+      grade: null,
+      draftGrade: 18,
+    });
+
+    // El profesor la devuelve: una nueva importación no la pisa…
+    await gql(
+      'profe',
+      `mutation($input: InstituteGradeInput!) { gradeInstituteSubmission(input: $input) { grade } }`,
+      { input: { itemId, studentId: ids.alumno, grade: 19, returnToStudent: true } },
+    );
+    const again = await gql('profe', IMPORT, { input: { ...base, apply: true } });
+    expect(again.body.data.importInstituteFormGrades).toMatchObject({
+      updated: 0,
+      skippedReturned: 1,
+    });
+    // …salvo que lo pida, y devolviéndola de una vez.
+    await gql('profe', IMPORT, {
+      input: { ...base, overwriteReturned: true, returnToStudent: true, apply: true },
+    });
+    expect(
+      (await gql('profe', SUBS, { id: itemId })).body.data.instituteSubmissions[0],
+    ).toMatchObject({
+      state: 'RETURNED',
+      grade: 18,
+      draftGrade: null,
+    });
+  });
 });

@@ -102,3 +102,38 @@ export class InstituteClassInput {
   @Field(() => String, { nullable: true, description: 'Enlace para conectarse (YouTube, Meet…).' })
   meetingUrl?: string | null;
 }
+
+@InputType()
+export class FormResponseInput {
+  @Field({ description: 'Correo con el que respondió.' })
+  email!: string;
+
+  @Field(() => Float)
+  score!: number;
+
+  @Field(() => Date, { nullable: true })
+  submittedAt?: Date | null;
+}
+
+@InputType()
+export class ImportFormGradesInput {
+  @Field(() => ID)
+  itemId!: string;
+
+  @Field(() => [FormResponseInput])
+  responses!: FormResponseInput[];
+
+  @Field(() => Float, {
+    description: 'Puntaje máximo del formulario (para convertir a los de la tarea).',
+  })
+  formTotal!: number;
+
+  @Field({ defaultValue: false, description: 'true = el alumno ve la nota; false = borrador.' })
+  returnToStudent!: boolean;
+
+  @Field({ defaultValue: false, description: 'Reemplazar notas ya devueltas.' })
+  overwriteReturned!: boolean;
+
+  @Field({ defaultValue: false, description: 'false = solo vista previa.' })
+  apply!: boolean;
+}

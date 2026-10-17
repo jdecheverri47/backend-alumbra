@@ -3,6 +3,7 @@ import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { AuthenticatedUser } from '../auth/types/authenticated-user';
 import { InstituteRole } from './dto/institute-enums';
 import {
+  ImportFormGradesInput,
   InstituteClassInput,
   InstituteEnrollInput,
   InstituteGradeInput,
@@ -10,6 +11,7 @@ import {
   InstituteModuleInput,
 } from './dto/institute.inputs';
 import {
+  FormGradesImportModel,
   InstituteAccessModel,
   InstituteCalendarEntryModel,
   InstituteClassModel,
@@ -173,5 +175,15 @@ export class InstituteResolver {
     @Args('id', { type: () => ID }) id: string,
   ): Promise<boolean> {
     return this.service.deleteClass(me, id);
+  }
+
+  @Mutation(() => FormGradesImportModel, {
+    description: 'Notas de un examen en Google Forms (apply: false = vista previa).',
+  })
+  async importInstituteFormGrades(
+    @CurrentUser() me: AuthenticatedUser,
+    @Args('input') input: ImportFormGradesInput,
+  ): Promise<FormGradesImportModel> {
+    return this.service.importFormGrades(me, input);
   }
 }

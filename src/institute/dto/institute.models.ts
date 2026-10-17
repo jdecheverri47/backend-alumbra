@@ -259,3 +259,30 @@ export class InstituteCalendarEntryModel {
   @Field({ description: 'Alumnos: ya la entregó o tiene nota.' })
   done!: boolean;
 }
+
+@ObjectType('FormGradesImport')
+export class FormGradesImportModel {
+  @Field(() => Int, { description: 'Respuestas distintas (una por correo).' })
+  responses!: number;
+
+  @Field(() => Int, { description: 'Coinciden con un alumno inscrito.' })
+  matched!: number;
+
+  @Field(() => Int, { description: 'Se guardan (o se guardarían) ahora.' })
+  updated!: number;
+
+  @Field(() => Int, { description: 'Ya tenían nota devuelta y no se tocan.' })
+  skippedReturned!: number;
+
+  @Field(() => [String], { description: 'Correos que no son de alumnos del instituto.' })
+  unmatched!: string[];
+
+  @Field(() => Int, { description: 'Alumnos inscritos que no respondieron.' })
+  missing!: number;
+
+  @Field(() => Float, { nullable: true, description: 'Puntos de la tarea a los que se convierte.' })
+  maxPoints?: number | null;
+
+  @Field()
+  applied!: boolean;
+}

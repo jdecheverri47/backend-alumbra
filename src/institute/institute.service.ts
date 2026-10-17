@@ -23,6 +23,7 @@ import {
   InstituteCalendarEntryModel,
   InstituteCalendarEntryType,
   InstituteClassModel,
+  FormGradesImportModel,
   InstituteEnrollmentModel,
   InstituteGradebookModel,
   InstituteItemModel,
@@ -86,6 +87,23 @@ const classSchema = z
     message: 'La clase tiene que terminar después de empezar.',
     path: ['endsAt'],
   });
+
+const formGradesSchema = z.object({
+  itemId: z.string().min(1),
+  responses: z
+    .array(
+      z.object({
+        email: z.string().trim().toLowerCase().email(),
+        score: z.number().min(0),
+        submittedAt: z.coerce.date().nullish(),
+      }),
+    )
+    .max(5000),
+  formTotal: z.number().positive(),
+  returnToStudent: z.boolean(),
+  overwriteReturned: z.boolean(),
+  apply: z.boolean(),
+});
 
 const gradeSchema = z.object({
   itemId: z.string().min(1),
@@ -648,5 +666,108 @@ export class InstituteService {
         };
       }),
     ];
+  }
+
+  /**
+   * Notas de un examen en Google Forms (el navegador del profesor las lee con
+   * su permiso y las manda aquí). Se cruzan por correo con los alumnos; si un
+   * correo respondió varias veces cuenta la última respuesta. Responder cuenta
+   * como entregar. Sin `apply` es solo vista previa.
+   */
+  async importFormGrades(me: AuthenticatedUser, raw: unknown): Promise<FormGradesImportModel> {
+    await this.assertManage(me);
+    const data = formGradesSchema.parse(raw);
+    const item = await this.prisma.instituteItem.findFirst({
+      where: { id: data.itemId, deletedAt: null },
+    });
+    if (!item) throw new NotFoundException(`Item ${data.itemId} not found.`);
+    if (item.kind === 'MATERIAL') throw new BadRequestException('Un material no se califica.');
+
+    // Una respuesta por correo: la última.
+    const latest = new Map<string, (typeof data.responses)[number]>();
+    for (const r of data.responses) {
+      const prev = latest.get(r.email);
+      const newer = !prev || (r.submittedAt?.getTime() ?? 0) >= (prev.submittedAt?.getTime() ?? 0);
+      if (newer) latest.set(r.email, r);
+    }
+
+    const students = await this.prisma.instituteEnrollment.findMany({
+      where: { role: 'STUDENT', leftAt: null, user: { deletedAt: null } },
+      include: { user: true },
+    });
+    const byEmail = new Map(students.map((s) => [s.user.email.toLowerCase(), s.user]));
+    const existing = await this.prisma.instituteSubmission.findMany({ where: { itemId: item.id } });
+    const existingBy = new Map(existing.map((s) => [s.studentId, s]));
+
+    // Si la tarea no tiene puntos, toma los del formulario; si tiene otros, se convierte.
+    const maxPoints = item.maxPoints ?? data.formTotal;
+    const scale = maxPoints / data.formTotal;
+    const round = (n: number) => Math.round(n * 100) / 100;
+
+    const unmatched: string[] = [];
+    const writes: Array<{ studentId: string; grade: number; submittedAt: Date | null }> = [];
+    let skippedReturned = 0;
+    for (const [email, r] of latest) {
+      const student = byEmail.get(email);
+      if (!student) {
+        unmatched.push(email);
+        continue;
+      }
+      const prev = existingBy.get(student.id);
+      if (prev?.grade != null && !data.overwriteReturned) {
+        skippedReturned += 1;
+        continue;
+      }
+      writes.push({
+        studentId: student.id,
+        grade: round(Math.min(r.score * scale, maxPoints)),
+        submittedAt: r.submittedAt ?? null,
+      });
+    }
+    const matched = latest.size - unmatched.length;
+
+    if (data.apply) {
+      const now = new Date();
+      await this.prisma.$transaction([
+        ...(item.maxPoints == null
+          ? [
+              this.prisma.instituteItem.update({
+                where: { id: item.id },
+                data: { maxPoints: Math.round(maxPoints) },
+              }),
+            ]
+          : []),
+        ...writes.map((w) => {
+          const prev = existingBy.get(w.studentId);
+          const turnedIn = {
+            // Responder el formulario es entregar.
+            state: data.returnToStudent
+              ? ('RETURNED' as const)
+              : (prev?.state ?? ('TURNED_IN' as const)),
+            turnedInAt: prev?.turnedInAt ?? w.submittedAt ?? now,
+            late: prev?.late || Boolean(item.dueAt && w.submittedAt && w.submittedAt > item.dueAt),
+          };
+          const grades = data.returnToStudent
+            ? { grade: w.grade, draftGrade: null, gradedById: me.sub, gradedAt: now }
+            : { draftGrade: w.grade };
+          return this.prisma.instituteSubmission.upsert({
+            where: { itemId_studentId: { itemId: item.id, studentId: w.studentId } },
+            create: { itemId: item.id, studentId: w.studentId, ...turnedIn, ...grades },
+            update: { ...turnedIn, ...grades },
+          });
+        }),
+      ]);
+    }
+
+    return {
+      responses: latest.size,
+      matched,
+      updated: writes.length,
+      skippedReturned,
+      unmatched: unmatched.sort(),
+      missing: students.length - matched,
+      maxPoints,
+      applied: data.apply,
+    };
   }
 }
