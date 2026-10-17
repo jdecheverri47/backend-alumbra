@@ -340,6 +340,29 @@ input FormResponseInput {
   submittedAt: DateTime
 }
 
+type Grant {
+  bindingId: String
+  permission: String!
+  scopeId: String
+
+  """Nombre del ministerio o grupo."""
+  scopeName: String
+  scopeType: String!
+
+  """"cargo" o "rol"."""
+  source: String!
+  via: String!
+}
+
+input GrantRoleInput {
+  roleId: ID!
+  scopeId: ID
+
+  """CHURCH, MINISTRY o GROUP."""
+  scopeType: String! = "CHURCH"
+  userId: ID!
+}
+
 type Group {
   archivedAt: DateTime
 
@@ -826,6 +849,7 @@ type Mutation {
   createInstituteModule(input: InstituteModuleInput!): InstituteModule!
   createMinistry(input: CreateMinistryInput!): Ministry!
   createPost(input: CreatePostInput!): Post!
+  createRole(input: RoleInput!): Role!
   createSessionAssignment(input: CreateSessionAssignmentInput!): SessionAssignment!
   createUser(input: CreateUserInput!): User!
 
@@ -837,11 +861,13 @@ type Mutation {
   deleteNewcomer(id: ID!): Newcomer!
   deletePost(id: ID!): Post!
   deletePostComment(id: ID!): PostComment!
+  deleteRole(id: ID!): Boolean!
 
   """Auto-inscripción al curso de Evangelio (solo no miembros)."""
   enrollInCourse(courseId: ID!): CourseEnrollment!
   enrollInInstitute(input: InstituteEnrollInput!): [InstituteEnrollment!]!
   gradeInstituteSubmission(input: InstituteGradeInput!): InstituteSubmission!
+  grantRole(input: GrantRoleInput!): RoleBinding!
 
   """Notas de un examen en Google Forms (apply: false = vista previa)."""
   importInstituteFormGrades(input: ImportFormGradesInput!): FormGradesImport!
@@ -872,6 +898,7 @@ type Mutation {
 
   """Reprogramar (reactiva si estaba cancelada)."""
   rescheduleGroupSession(id: ID!, note: String, startsAt: DateTime!): GroupSession!
+  revokeRoleBinding(id: ID!): Boolean!
 
   """Agenda o reprograma la entrevista."""
   scheduleJourneyInterview(at: DateTime!, id: ID!): MembershipJourney!
@@ -915,6 +942,7 @@ type Mutation {
   updateInstituteModule(id: ID!, input: InstituteModuleInput!): InstituteModule!
   updateMinistry(id: ID!, input: UpdateMinistryInput!): Ministry!
   updateNewcomer(id: ID!, input: NewcomerInput!): Newcomer!
+  updateRole(id: ID!, input: RoleInput!): Role!
   updateUser(id: ID!, input: UpdateUserInput!): User!
 
   """Valida (o no) la entrada a la Ruta. Exige Evangelio certificado."""
@@ -922,6 +950,12 @@ type Mutation {
 
   """Vota en una encuesta. Un voto por persona."""
   votePoll(optionId: ID!): Poll!
+}
+
+type MyPermissions {
+  """Pastor: lo puede todo."""
+  all: Boolean!
+  grants: [Grant!]!
 }
 
 type Newcomer {
@@ -1020,6 +1054,29 @@ type PageInfo {
 input PaginationInput {
   after: String
   first: Int! = 20
+}
+
+type PermissionAuditEntry {
+  action: String!
+  actor: User!
+  createdAt: DateTime!
+  id: ID!
+  summary: String!
+}
+
+type PermissionDef {
+  description: String!
+  key: String!
+  label: String!
+
+  """CHURCH, MINISTRY…: sobre qué se puede dar."""
+  scopes: [String!]!
+}
+
+type PermissionModule {
+  key: String!
+  label: String!
+  permissions: [PermissionDef!]!
 }
 
 type Poll {
@@ -1207,6 +1264,9 @@ type Query {
 
   """Personas asignadas a quien consulta que todavía nadie ha contactado."""
   myPendingNewcomers: Int!
+
+  """Lo que puede hacer quien consulta."""
+  myPermissions: MyPermissions!
   newcomer(id: ID!): Newcomer!
 
   """Personas nuevas, lo más reciente primero."""
@@ -1214,6 +1274,10 @@ type Query {
 
   """Inscritos pendientes de cohorte de un curso."""
   pendingCourseEnrollments(courseId: ID!): [CourseEnrollment!]!
+  permissionAudit(limit: Int! = 50): [PermissionAuditEntry!]!
+
+  """Todos los permisos, por módulo."""
+  permissionCatalog: [PermissionModule!]!
 
   """Anuncios fijados, para mostrar arriba del feed."""
   pinnedAnnouncements(audience: FeedAudience! = ALL): [Post!]!
@@ -1229,6 +1293,10 @@ type Query {
   """Eventos generales publicables sin fecha definida. No requiere sesión."""
   publicUndatedEvents: [PublicEvent!]!
 
+  """Roles asignados (de una persona, o todos)."""
+  roleBindings(userId: ID): [RoleBinding!]!
+  roles: [Role!]!
+
   """
   Cohortes de la Ruta con su estado. Pastores: todas; líderes: las suyas.
   """
@@ -1237,6 +1305,9 @@ type Query {
   """Eventos anunciados sin fecha definida, visibles para mí."""
   undatedEvents: [Event!]!
   user(id: ID!): User
+
+  """Lo que puede hacer una persona y de dónde le viene."""
+  userAccess(userId: ID!): MyPermissions!
   users(filter: UserFilterInput, pagination: PaginationInput): UserConnection!
 }
 
@@ -1249,6 +1320,35 @@ enum ReactionType {
   AMEN
   LIKE
   LOVE
+}
+
+type Role {
+  bindingCount: Int!
+  description: String
+  id: ID!
+  key: String!
+  name: String!
+  permissions: [String!]!
+
+  """Predefinido: no se edita."""
+  system: Boolean!
+}
+
+type RoleBinding {
+  createdAt: DateTime!
+  grantedBy: User!
+  id: ID!
+  role: Role!
+  scopeId: String
+  scopeName: String
+  scopeType: String!
+  user: User!
+}
+
+input RoleInput {
+  description: String
+  name: String!
+  permissions: [String!]!
 }
 
 type RutaAssignmentTrace {

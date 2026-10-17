@@ -143,6 +143,9 @@ model User {
   instituteSubmissions   InstituteSubmission[]  @relation("InstituteSubmissionStudent")
   gradedSubmissions      InstituteSubmission[]  @relation("InstituteSubmissionGrader")
   instituteClasses       InstituteClass[]
+  roleBindings           RoleBinding[]          @relation("RoleBindingUser")
+  grantedRoleBindings    RoleBinding[]          @relation("RoleBindingGrantedBy")
+  permissionAudits       PermissionAudit[]      @relation("PermissionAuditActor")
   reviewedAccessRequests AccessRequest[]        @relation("AccessRequestReviewer")
 
   createdAt    DateTime       @default(now())
@@ -856,4 +859,71 @@ model InstituteClass {
   deletedAt DateTime?
 
   @@index([startsAt])
+}
+
+// ---------------------------------------------------------------------------
+// Permisos, al estilo del IAM de GCP: el catálogo de permisos vive en el
+// código (src/permissions/catalog.ts); un rol es un conjunto de permisos y se
+// asigna a una persona con un alcance (toda la iglesia, un ministerio o un
+// grupo). Además, los cargos (coordinador, profesor, líder de grupo…) dan
+// permisos por sí solos; esos no se guardan aquí.
+// ---------------------------------------------------------------------------
+
+enum PermissionScope {
+  CHURCH
+  MINISTRY
+  GROUP
+}
+
+model Role {
+  id          String   @id @default(cuid())
+  // Los predefinidos tienen una clave fija (p. ej. "administrador-personas").
+  key         String   @unique
+  name        String
+  description String?
+  permissions String[]
+  // Predefinido: sus permisos vienen del código y no se editan.
+  system      Boolean  @default(false)
+
+  bindings RoleBinding[]
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+}
+
+model RoleBinding {
+  id          String          @id @default(cuid())
+  userId      String
+  roleId      String
+  scopeType   PermissionScope @default(CHURCH)
+  // Id del ministerio o grupo; null si el alcance es toda la iglesia.
+  scopeId     String?
+  grantedById String
+  revokedAt   DateTime?
+
+  user      User @relation("RoleBindingUser", fields: [userId], references: [id])
+  role      Role @relation(fields: [roleId], references: [id])
+  grantedBy User @relation("RoleBindingGrantedBy", fields: [grantedById], references: [id])
+
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+  @@index([roleId])
+}
+
+// Historial de cambios de permisos: quién dio o quitó qué, y cuándo.
+model PermissionAudit {
+  id      String @id @default(cuid())
+  actorId String
+  // GRANT, REVOKE, ROLE_CREATE, ROLE_UPDATE, ROLE_DELETE
+  action  String
+  summary String
+  details Json?
+
+  actor User @relation("PermissionAuditActor", fields: [actorId], references: [id])
+
+  createdAt DateTime @default(now())
+
+  @@index([createdAt])
 }

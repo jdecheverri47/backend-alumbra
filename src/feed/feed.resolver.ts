@@ -1,7 +1,7 @@
 import { Args, ID, Int, Mutation, Parent, Query, ResolveField, Resolver } from '@nestjs/graphql';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { canSeeMembersOnly } from '../events/event-visibility';
-import { RequirePastor } from '../auth/decorators/require-pastor.decorator';
+import { RequirePermission } from '../permissions/require-permission.decorator';
 import { AuthenticatedUser } from '../auth/types/authenticated-user';
 import { PaginationInput } from '../common/pagination/pagination.input';
 import { CreatePostInput } from './dto/create-post.input';
@@ -46,7 +46,7 @@ export class FeedResolver {
   async myFeedPermissions(@CurrentUser() me: AuthenticatedUser): Promise<FeedPermissionsModel> {
     return {
       canPost: await this.feedService.canPost(me),
-      canAnnounce: me.isPastor,
+      canAnnounce: await this.feedService.canAnnounce(me),
       canSeeMembersOnly: canSeeMembersOnly(me),
     };
   }
@@ -78,7 +78,7 @@ export class FeedResolver {
     return toPostModel(await this.feedService.deletePost(me, id), me);
   }
 
-  @RequirePastor()
+  @RequirePermission('muro.fijar')
   @Mutation(() => PostModel)
   async setPostPinned(
     @Args('id', { type: () => ID }) id: string,

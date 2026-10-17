@@ -1,7 +1,7 @@
 import { Args, ID, Mutation, Query, Resolver } from '@nestjs/graphql';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
-import { RequireMinistryLeader } from '../auth/decorators/require-ministry-leader.decorator';
 import { AuthenticatedUser } from '../auth/types/authenticated-user';
+import { RequirePermission } from '../permissions/require-permission.decorator';
 import { AccessRequestsService } from './access-requests.service';
 import {
   AccessRequestModel,
@@ -9,15 +9,14 @@ import {
   toAccessRequestModel,
 } from './dto/access-request.model';
 
-// Las mismas personas que registran a los recién llegados (createUser):
-// pastores y líderes de Acogida.
-const ACOGIDA = () => ({ ministrySlug: 'acogida' });
+// Pastores, coordinadores de Acogida (por su cargo) o quien tenga el permiso.
+const APPROVE = 'accesos.aprobar';
 
 @Resolver(() => AccessRequestModel)
 export class AccessRequestsResolver {
   constructor(private readonly service: AccessRequestsService) {}
 
-  @RequireMinistryLeader(ACOGIDA)
+  @RequirePermission(APPROVE)
   @Query(() => [AccessRequestModel], {
     description: 'Solicitudes de acceso hechas con Google. Pastores y líderes de Acogida.',
   })
@@ -29,7 +28,7 @@ export class AccessRequestsResolver {
     return rows.map(toAccessRequestModel);
   }
 
-  @RequireMinistryLeader(ACOGIDA)
+  @RequirePermission(APPROVE)
   @Mutation(() => AccessRequestModel, {
     description: 'Da acceso: habilita o crea el usuario (como asistente).',
   })
@@ -40,7 +39,7 @@ export class AccessRequestsResolver {
     return toAccessRequestModel(await this.service.approve(id, me.sub));
   }
 
-  @RequireMinistryLeader(ACOGIDA)
+  @RequirePermission(APPROVE)
   @Mutation(() => AccessRequestModel)
   async rejectAccessRequest(
     @Args('id', { type: () => ID }) id: string,

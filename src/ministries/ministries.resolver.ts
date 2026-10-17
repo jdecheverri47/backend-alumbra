@@ -1,8 +1,7 @@
 import { Args, ID, Mutation, Parent, Query, ResolveField, Resolver } from '@nestjs/graphql';
 import { Ministry } from '@prisma/client';
-import { RequireMinistryLeader } from '../auth/decorators/require-ministry-leader.decorator';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
-import { RequirePastor } from '../auth/decorators/require-pastor.decorator';
+import { RequirePermission } from '../permissions/require-permission.decorator';
 import { AuthenticatedUser } from '../auth/types/authenticated-user';
 import { UsersService } from '../users/users.service';
 import { AddUserToMinistryInput } from './dto/add-user-to-ministry.input';
@@ -66,13 +65,13 @@ export class MinistriesResolver {
     return rows.map((m) => toMembershipModel(m, m.user, ministry as unknown as Ministry));
   }
 
-  @RequirePastor()
+  @RequirePermission('ministerios.administrar')
   @Mutation(() => MinistryModel)
   async createMinistry(@Args('input') input: CreateMinistryInput): Promise<MinistryModel> {
     return this.ministriesService.create(input);
   }
 
-  @RequirePastor()
+  @RequirePermission('ministerios.administrar')
   @Mutation(() => MinistryModel)
   async updateMinistry(
     @Args('id', { type: () => ID }) id: string,
@@ -81,15 +80,12 @@ export class MinistriesResolver {
     return this.ministriesService.updateById(id, input);
   }
 
-  @RequirePastor()
+  @RequirePermission('ministerios.administrar')
   @Mutation(() => MinistryModel)
   async archiveMinistry(@Args('id', { type: () => ID }) id: string): Promise<MinistryModel> {
     return this.ministriesService.archive(id);
   }
 
-  @RequireMinistryLeader((args) => ({
-    ministryId: (args.input as AddUserToMinistryInput).ministryId,
-  }))
   @Mutation(() => MinistryMembershipModel)
   async addUserToMinistry(
     @Args('input') input: AddUserToMinistryInput,
@@ -103,7 +99,6 @@ export class MinistriesResolver {
     return toMembershipModel(m, user, ministry);
   }
 
-  @RequireMinistryLeader((args) => ({ membershipId: args.membershipId as string }))
   @Mutation(() => MinistryMembershipModel)
   async removeUserFromMinistry(
     @Args('membershipId', { type: () => ID }) membershipId: string,
@@ -117,7 +112,7 @@ export class MinistriesResolver {
     return toMembershipModel(m, user, ministry);
   }
 
-  @RequirePastor()
+  @RequirePermission('ministerios.administrar')
   @Mutation(() => MinistryMembershipModel, {
     description: 'Cambia el rol dentro del ministerio: coordinador (LEADER) o ministro (MEMBER).',
   })

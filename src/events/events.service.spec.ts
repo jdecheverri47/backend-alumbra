@@ -3,6 +3,7 @@ import { PrismaClient, User } from '@prisma/client';
 import { wipeDb } from '../../test/setup/wipe-db';
 import { requireLocalDb } from '../../test/setup/require-local-db';
 import { AuthenticatedUser } from '../auth/types/authenticated-user';
+import { PermissionsService } from '../permissions/permissions.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { EventsService } from './events.service';
 
@@ -55,7 +56,7 @@ describe('EventsService', () => {
   beforeAll(async () => {
     requireLocalDb();
     const moduleRef = await Test.createTestingModule({
-      providers: [EventsService, PrismaService],
+      providers: [EventsService, PrismaService, PermissionsService],
     }).compile();
     service = moduleRef.get(EventsService);
     prisma = moduleRef.get(PrismaService);

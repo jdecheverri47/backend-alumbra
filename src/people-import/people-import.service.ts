@@ -39,7 +39,11 @@ function clean(value: string | null | undefined): string {
 export class PeopleImportService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async run(rows: ImportPersonInput[], apply: boolean): Promise<ImportPeopleResult> {
+  async run(
+    rows: ImportPersonInput[],
+    apply: boolean,
+    { canAssignMinistries = true }: { canAssignMinistries?: boolean } = {},
+  ): Promise<ImportPeopleResult> {
     if (rows.length === 0) throw new BadRequestException('La hoja no tiene filas.');
     if (rows.length > MAX_ROWS) {
       throw new BadRequestException(`Se pueden importar hasta ${MAX_ROWS} filas a la vez.`);
@@ -57,7 +61,9 @@ export class PeopleImportService {
     const byEmail = new Map(existing.map((u) => [u.email.toLowerCase(), u]));
     const seen = new Map<string, number>();
 
-    const plans = rows.map((row, i) => this.plan(row, i + 1, ministries, byEmail, seen));
+    const plans = rows.map((row, i) =>
+      this.plan(row, i + 1, ministries, byEmail, seen, canAssignMinistries),
+    );
 
     if (apply) {
       for (const plan of plans) {
@@ -96,6 +102,7 @@ export class PeopleImportService {
       User & { ministryMemberships: Array<{ ministryId: string; role: MinistryRole }> }
     >,
     seen: Map<string, number>,
+    canAssignMinistries: boolean,
   ): Plan {
     const firstName = clean(row.firstName);
     const lastName = clean(row.lastName);
@@ -147,6 +154,9 @@ export class PeopleImportService {
       wanted = parseMinistries(row.ministries, ministries);
     } catch (e) {
       errors.push(`Ministerios: ${(e as Error).message}.`);
+    }
+    if (wanted.length > 0 && !canAssignMinistries) {
+      errors.push('No tienes permiso para asignar ministerios (pídeselo a un pastor).');
     }
 
     const current = email ? byEmail.get(email) : undefined;

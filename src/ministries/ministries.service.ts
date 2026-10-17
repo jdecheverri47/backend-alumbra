@@ -7,12 +7,16 @@ import {
 } from '@nestjs/common';
 import { Ministry, MinistryMembership, MinistryRole, Prisma, User } from '@prisma/client';
 import { AuthenticatedUser } from '../auth/types/authenticated-user';
+import { PermissionsService } from '../permissions/permissions.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { createMinistrySchema, updateMinistrySchema } from './dto/inputs.schema';
 
 @Injectable()
 export class MinistriesService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly permissions: PermissionsService,
+  ) {}
 
   async create(raw: unknown): Promise<Ministry> {
     const data = createMinistrySchema.parse(raw);
@@ -127,6 +131,10 @@ export class MinistriesService {
   async assertCanView(me: AuthenticatedUser, ministryId: string): Promise<void> {
     if (me.isPastor) return;
     if (await this.roleOf(me.sub, ministryId)) return;
+    // Quien administra ministerios o arma este equipo también lo ve.
+    if (await this.permissions.can(me, 'ministerios.equipo', { type: 'MINISTRY', id: ministryId }))
+      return;
+    if (await this.permissions.can(me, 'ministerios.administrar')) return;
     throw new ForbiddenException({
       error: 'FORBIDDEN',
       message: 'Solo los pastores y quienes sirven en este ministerio pueden verlo.',
@@ -145,20 +153,15 @@ export class MinistriesService {
   }
 
   /**
-   * Sumar a alguien a un ministerio. Lo hacen pastores y coordinadores del
-   * ministerio (el guard ya lo comprobó); nombrar coordinadores es solo de
-   * pastores. Solo sirven miembros: un asistente todavía no.
+   * Sumar a alguien a un ministerio: "Armar el equipo" sobre ese ministerio
+   * (los coordinadores lo tienen por su cargo). Nombrar coordinadores exige
+   * "Administrar ministerios". Solo sirven miembros: un asistente todavía no.
    */
   async assignMember(
     me: AuthenticatedUser,
     input: { userId: string; ministryId: string; role: MinistryRole },
   ): Promise<MinistryMembership> {
-    if (input.role === 'LEADER' && !me.isPastor) {
-      throw new ForbiddenException({
-        error: 'FORBIDDEN',
-        message: 'Solo los pastores nombran coordinadores.',
-      });
-    }
+    await this.assertTeamPermission(me, input.ministryId, input.role);
     const user = await this.prisma.user.findUnique({ where: { id: input.userId } });
     if (!user || user.deletedAt) throw new NotFoundException(`User ${input.userId} not found.`);
     if (user.baseRole !== 'MIEMBRO' && !user.isPastor) {
@@ -178,16 +181,33 @@ export class MinistriesService {
     return this.prisma.ministryMembership.update({ where: { id: membershipId }, data: { role } });
   }
 
-  /** Sacar a alguien del ministerio. A un coordinador solo lo saca un pastor. */
+  /** Sacar a alguien del ministerio. A un coordinador, solo quien administra ministerios. */
   async unassignMember(me: AuthenticatedUser, membershipId: string): Promise<MinistryMembership> {
     const m = await this.prisma.ministryMembership.findUnique({ where: { id: membershipId } });
     if (!m) throw new NotFoundException(`Membership ${membershipId} not found.`);
-    if (m.role === 'LEADER' && !me.isPastor) {
-      throw new ForbiddenException({
-        error: 'FORBIDDEN',
-        message: 'Solo los pastores pueden sacar a un coordinador.',
-      });
-    }
+    await this.assertTeamPermission(me, m.ministryId, m.role);
     return this.removeMember(membershipId);
+  }
+
+  private async assertTeamPermission(
+    me: AuthenticatedUser,
+    ministryId: string,
+    role: MinistryRole,
+  ) {
+    if (role === 'LEADER') {
+      await this.permissions.assert(
+        me,
+        'ministerios.administrar',
+        undefined,
+        'Solo quien administra ministerios nombra o saca coordinadores.',
+      );
+      return;
+    }
+    await this.permissions.assert(
+      me,
+      'ministerios.equipo',
+      { type: 'MINISTRY', id: ministryId },
+      'No puedes armar el equipo de este ministerio.',
+    );
   }
 }

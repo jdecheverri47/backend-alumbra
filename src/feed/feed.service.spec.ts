@@ -1,5 +1,6 @@
 import { Test } from '@nestjs/testing';
 import { VideoProcessingService } from '../media/video-processing.service';
+import { PermissionsService } from '../permissions/permissions.service';
 import { PrismaClient, User } from '@prisma/client';
 import { wipeDb } from '../../test/setup/wipe-db';
 import { requireLocalDb } from '../../test/setup/require-local-db';
@@ -50,6 +51,7 @@ describe('FeedService', () => {
       providers: [
         FeedService,
         PrismaService,
+        PermissionsService,
         { provide: VideoProcessingService, useValue: { enqueue: () => undefined } },
       ],
     }).compile();
@@ -78,10 +80,10 @@ describe('FeedService', () => {
     it('rejects POST from a plain member and ANUNCIO from a non-pastor leader', async () => {
       await expect(
         service.createPost(asAuth(miembro), { type: 'POST', body: 'hola', imageUrls: [] }),
-      ).rejects.toThrow(/líderes/i);
+      ).rejects.toThrow(/permiso para publicar/i);
       await expect(
         service.createPost(asAuth(liderGrupo), { type: 'ANUNCIO', body: 'aviso', imageUrls: [] }),
-      ).rejects.toThrow(/pastores/i);
+      ).rejects.toThrow(/permiso para publicar anuncios/i);
     });
   });
 
@@ -267,7 +269,7 @@ describe('FeedService', () => {
 
       expect(await service.canPost(asAuth(asistente))).toBe(false);
       await expect(service.createPost(asAuth(asistente), { body: 'hola' })).rejects.toThrow(
-        /líderes/i,
+        /permiso para publicar/i,
       );
     });
 

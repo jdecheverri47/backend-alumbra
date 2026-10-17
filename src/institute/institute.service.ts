@@ -15,6 +15,7 @@ import {
 import { z } from 'zod';
 import { AuthenticatedUser } from '../auth/types/authenticated-user';
 import { VideoProcessingService } from '../media/video-processing.service';
+import { PermissionsService } from '../permissions/permissions.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { toUserModel } from '../users/dto/to-user-model';
 import { InstituteItemStatus } from './dto/institute-enums';
@@ -113,7 +114,8 @@ const gradeSchema = z.object({
 });
 
 type ItemRow = InstituteItem & { author: User; attachments: InstituteAttachment[] };
-type Access = { role: InstituteRole | null; isPastor: boolean };
+/** role: inscripción; manage: "Administrar el instituto"; teachers: "Nombrar profesores". */
+type Access = { role: InstituteRole | null; manage: boolean };
 
 const ITEM_INCLUDE = {
   author: true,
@@ -128,31 +130,34 @@ function statusOf(item: Pick<InstituteItem, 'publishAt'>, now = new Date()): Ins
 /**
  * El Instituto Bíblico. Lo administran profesores y pastores; los alumnos ven
  * lo publicado (no los borradores ni lo programado), marcan sus entregas y ven
- * sus notas devueltas. Solo los pastores nombran profesores.
+ * sus notas devueltas. Nombrar profesores exige "Nombrar profesores".
  */
 @Injectable()
 export class InstituteService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly video: VideoProcessingService,
+    private readonly permissions: PermissionsService,
   ) {}
 
   private async accessOf(me: AuthenticatedUser): Promise<Access> {
     const enrollment = await this.prisma.instituteEnrollment.findFirst({
       where: { userId: me.sub, leftAt: null },
     });
-    return { role: enrollment?.role ?? null, isPastor: me.isPastor };
+    // Los profesores lo tienen por su cargo; los pastores, siempre.
+    const manage = await this.permissions.can(me, 'instituto.administrar');
+    return { role: enrollment?.role ?? null, manage };
   }
 
   async access(me: AuthenticatedUser): Promise<InstituteAccessModel> {
     const a = await this.accessOf(me);
-    const canManage = a.isPastor || a.role === 'TEACHER';
+    const canManage = a.manage;
     return { role: a.role, canManage, canView: canManage || a.role === 'STUDENT' };
   }
 
   private async assertView(me: AuthenticatedUser): Promise<Access> {
     const a = await this.accessOf(me);
-    if (!a.isPastor && !a.role) {
+    if (!a.manage && !a.role) {
       throw new ForbiddenException({
         error: 'FORBIDDEN',
         message: 'El Instituto Bíblico es para sus alumnos, profesores y los pastores.',
@@ -163,7 +168,7 @@ export class InstituteService {
 
   private async assertManage(me: AuthenticatedUser): Promise<Access> {
     const a = await this.assertView(me);
-    if (!a.isPastor && a.role !== 'TEACHER') {
+    if (!a.manage) {
       throw new ForbiddenException({
         error: 'FORBIDDEN',
         message: 'Solo los profesores y los pastores pueden hacer esto.',
@@ -202,7 +207,7 @@ export class InstituteService {
   /** Los módulos con sus publicaciones; a los alumnos solo lo publicado. */
   async modules(me: AuthenticatedUser): Promise<InstituteModuleModel[]> {
     const a = await this.assertView(me);
-    const manager = a.isPastor || a.role === 'TEACHER';
+    const manager = a.manage;
     const now = new Date();
     const modules = await this.prisma.instituteModule.findMany({
       where: { archivedAt: null },
@@ -455,11 +460,11 @@ export class InstituteService {
     userIds: string[],
     role: InstituteRole,
   ): Promise<InstituteEnrollmentModel[]> {
-    const a = await this.assertManage(me);
-    if (role === 'TEACHER' && !a.isPastor) {
+    await this.assertManage(me);
+    if (role === 'TEACHER' && !(await this.permissions.can(me, 'instituto.profesores'))) {
       throw new ForbiddenException({
         error: 'FORBIDDEN',
-        message: 'Solo los pastores nombran profesores.',
+        message: 'No tienes permiso para nombrar profesores.',
       });
     }
     const users = await this.prisma.user.findMany({
@@ -487,13 +492,13 @@ export class InstituteService {
   }
 
   async unenroll(me: AuthenticatedUser, enrollmentId: string): Promise<boolean> {
-    const a = await this.assertManage(me);
+    await this.assertManage(me);
     const row = await this.prisma.instituteEnrollment.findUnique({ where: { id: enrollmentId } });
     if (!row) throw new NotFoundException(`Enrollment ${enrollmentId} not found.`);
-    if (row.role === 'TEACHER' && !a.isPastor) {
+    if (row.role === 'TEACHER' && !(await this.permissions.can(me, 'instituto.profesores'))) {
       throw new ForbiddenException({
         error: 'FORBIDDEN',
-        message: 'Solo los pastores sacan a un profesor.',
+        message: 'No tienes permiso para sacar a un profesor.',
       });
     }
     await this.prisma.instituteEnrollment.update({
@@ -612,7 +617,7 @@ export class InstituteService {
     to: Date,
   ): Promise<InstituteCalendarEntryModel[]> {
     const a = await this.accessOf(me);
-    const manager = a.isPastor || a.role === 'TEACHER';
+    const manager = a.manage;
     if (!manager && a.role !== 'STUDENT') return [];
     const now = new Date();
 

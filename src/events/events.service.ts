@@ -1,5 +1,6 @@
 import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { Event } from '@prisma/client';
+import { PermissionsService } from '../permissions/permissions.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuthenticatedUser } from '../auth/types/authenticated-user';
 import { createEventSchema, updateEventSchema } from './dto/inputs.schema';
@@ -10,18 +11,21 @@ const EVENT_INCLUDE = { createdBy: true, group: { include: { leader: true } } } 
 
 @Injectable()
 export class EventsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly permissions: PermissionsService,
+  ) {}
 
   async create(me: AuthenticatedUser, raw: unknown): Promise<EventRow> {
     const data = createEventSchema.parse(raw);
 
     if (!data.groupId) {
-      if (!me.isPastor) {
-        throw new ForbiddenException({
-          error: 'FORBIDDEN',
-          message: 'Solo un pastor puede crear eventos generales.',
-        });
-      }
+      await this.permissions.assert(
+        me,
+        'calendario.eventos_generales',
+        undefined,
+        'No tienes permiso para crear eventos generales.',
+      );
     } else {
       const group = await this.prisma.group.findUnique({ where: { id: data.groupId } });
       if (!group) throw new NotFoundException(`Group ${data.groupId} not found.`);
@@ -100,7 +104,12 @@ export class EventsService {
   private async assertCreatorOrPastor(me: AuthenticatedUser, id: string): Promise<EventRow> {
     const event = await this.prisma.event.findUnique({ where: { id }, include: EVENT_INCLUDE });
     if (!event) throw new NotFoundException(`Event ${id} not found.`);
-    if (!me.isPastor && event.createdById !== me.sub) {
+    // Quien lo creó; si es general, también quien puede crear eventos generales.
+    const mayEdit =
+      event.createdById === me.sub ||
+      me.isPastor ||
+      (!event.groupId && (await this.permissions.can(me, 'calendario.eventos_generales')));
+    if (!mayEdit) {
       throw new ForbiddenException({
         error: 'FORBIDDEN',
         message: 'Solo quien creó el evento o un pastor puede modificarlo.',

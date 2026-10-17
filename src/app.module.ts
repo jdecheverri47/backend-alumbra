@@ -20,6 +20,7 @@ import { MinistriesModule } from './ministries/ministries.module';
 import { NewcomersModule } from './newcomers/newcomers.module';
 import { InstituteModule } from './institute/institute.module';
 import { PeopleImportModule } from './people-import/people-import.module';
+import { PermissionsModule } from './permissions/permissions.module';
 import { PrismaModule } from './prisma/prisma.module';
 import { UploadsModule } from './uploads/uploads.module';
 import { UsersModule } from './users/users.module';
@@ -76,6 +77,7 @@ function formatGraphQLError(
       }),
     }),
     AuthModule,
+    PermissionsModule,
     AccessRequestsModule,
     UsersModule,
     MinistriesModule,

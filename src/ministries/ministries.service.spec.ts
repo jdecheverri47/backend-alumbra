@@ -1,5 +1,6 @@
 import { Test } from '@nestjs/testing';
 import { requireLocalDb } from '../../test/setup/require-local-db';
+import { PermissionsService } from '../permissions/permissions.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { UsersService } from '../users/users.service';
 import { MinistriesService } from './ministries.service';
@@ -12,7 +13,7 @@ describe('MinistriesService', () => {
   beforeAll(async () => {
     requireLocalDb();
     const moduleRef = await Test.createTestingModule({
-      providers: [MinistriesService, UsersService, PrismaService],
+      providers: [MinistriesService, UsersService, PrismaService, PermissionsService],
     }).compile();
 
     service = moduleRef.get(MinistriesService);

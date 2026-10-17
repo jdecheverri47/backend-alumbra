@@ -9,6 +9,7 @@ import { PostComment, Prisma, ReactionType, User } from '@prisma/client';
 import { decodeCursor, encodeCursor } from '../common/pagination/encode-cursor';
 import { PaginationInput } from '../common/pagination/pagination.input';
 import { VideoProcessingService } from '../media/video-processing.service';
+import { PermissionsService } from '../permissions/permissions.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuthenticatedUser } from '../auth/types/authenticated-user';
 import { canSeeMembersOnly } from '../events/event-visibility';
@@ -23,40 +24,36 @@ export class FeedService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly video: VideoProcessingService,
+    private readonly permissions: PermissionsService,
   ) {}
 
   /**
-   * Publican pastores, líderes designados, líderes de grupo y líderes de
-   * ministerio (coordinadores). Un asistente nunca, aunque dirija un grupo.
-   * Comentar y reaccionar sí lo puede hacer cualquiera.
+   * "Publicar en el muro". Por su cargo lo tienen los líderes designados, los
+   * de grupo y los coordinadores de ministerio, si son miembros (un asistente
+   * no, aunque dirija un grupo). Comentar y reaccionar lo puede cualquiera.
    */
-  async canPost(me: AuthenticatedUser): Promise<boolean> {
-    if (me.isPastor) return true;
-    if (me.baseRole === 'ASISTENTE') return false;
-    if (me.user.isLeader) return true;
-    const [ledGroup, ledMinistry] = await Promise.all([
-      this.prisma.group.findFirst({ where: { leaderId: me.sub, archivedAt: null } }),
-      this.prisma.ministryMembership.findFirst({
-        where: { userId: me.sub, role: 'LEADER', leftAt: null },
-      }),
-    ]);
-    return Boolean(ledGroup || ledMinistry);
+  canPost(me: AuthenticatedUser): Promise<boolean> {
+    return this.permissions.can(me, 'muro.publicar');
+  }
+
+  canAnnounce(me: AuthenticatedUser): Promise<boolean> {
+    return this.permissions.can(me, 'muro.anunciar');
   }
 
   async createPost(me: AuthenticatedUser, raw: unknown): Promise<PostRow> {
     const data = createPostSchema.parse(raw);
 
     if (data.type === 'ANUNCIO') {
-      if (!me.isPastor) {
+      if (!(await this.canAnnounce(me))) {
         throw new ForbiddenException({
           error: 'FORBIDDEN',
-          message: 'Solo los pastores pueden publicar anuncios.',
+          message: 'No tienes permiso para publicar anuncios.',
         });
       }
     } else if (!(await this.canPost(me))) {
       throw new ForbiddenException({
         error: 'FORBIDDEN',
-        message: 'Solo pastores y líderes pueden publicar en el feed.',
+        message: 'No tienes permiso para publicar en el muro.',
       });
     }
 
@@ -211,10 +208,10 @@ export class FeedService {
 
   async deletePost(me: AuthenticatedUser, id: string): Promise<PostRow> {
     const post = await this.findByIdOrThrow(id);
-    if (!me.isPastor && post.authorId !== me.sub) {
+    if (post.authorId !== me.sub && !(await this.permissions.can(me, 'muro.moderar'))) {
       throw new ForbiddenException({
         error: 'FORBIDDEN',
-        message: 'Solo el autor o un pastor puede eliminar el post.',
+        message: 'Solo el autor o quien modera el muro puede eliminar la publicación.',
       });
     }
     return this.prisma.post.update({
@@ -256,7 +253,9 @@ export class FeedService {
     });
     if (!comment || comment.deletedAt) throw new NotFoundException(`Comment ${id} not found.`);
     const mayDelete =
-      me.isPastor || comment.authorId === me.sub || comment.post.authorId === me.sub;
+      comment.authorId === me.sub ||
+      comment.post.authorId === me.sub ||
+      (await this.permissions.can(me, 'muro.moderar'));
     if (!mayDelete) {
       throw new ForbiddenException({
         error: 'FORBIDDEN',

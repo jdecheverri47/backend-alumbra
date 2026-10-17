@@ -1,18 +1,7 @@
-import {
-  BadRequestException,
-  ForbiddenException,
-  Injectable,
-  NotFoundException,
-} from '@nestjs/common';
-import {
-  MinistryRole,
-  Newcomer,
-  NewcomerFollowUp,
-  NewcomerStatus,
-  Prisma,
-  User,
-} from '@prisma/client';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { Newcomer, NewcomerFollowUp, NewcomerStatus, Prisma, User } from '@prisma/client';
 import { AuthenticatedUser } from '../auth/types/authenticated-user';
+import { PermissionsService } from '../permissions/permissions.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { toUserModel } from '../users/dto/to-user-model';
 import {
@@ -23,9 +12,6 @@ import {
 import { NewcomerFollowUpModel, NewcomerModel } from './dto/newcomer.model';
 
 export const ACOGIDA_SLUG = 'acogida';
-
-/** Quién actúa en Acogida: pastor, coordinador o ministro. */
-type AcogidaRole = 'PASTOR' | MinistryRole;
 
 type NewcomerRow = Newcomer & {
   registeredBy: User;
@@ -95,32 +81,30 @@ function toNewcomerModel(n: NewcomerRow): NewcomerModel {
  */
 @Injectable()
 export class NewcomersService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly permissions: PermissionsService,
+  ) {}
 
   /** El rol de `me` en Acogida; lanza si no tiene acceso. */
-  async access(me: AuthenticatedUser): Promise<AcogidaRole> {
-    if (me.isPastor) return 'PASTOR';
-    const membership = await this.prisma.ministryMembership.findFirst({
-      where: { userId: me.sub, leftAt: null, ministry: { slug: ACOGIDA_SLUG } },
-      select: { role: true },
-    });
-    if (!membership) {
-      throw new ForbiddenException({
-        error: 'FORBIDDEN',
-        message: 'Solo los pastores y el equipo de Acogida ven a las personas nuevas.',
-      });
-    }
-    return membership.role;
+  /** Ver y registrar: "Acogida: personas nuevas" (el equipo de Acogida lo tiene por su cargo). */
+  async access(me: AuthenticatedUser): Promise<void> {
+    await this.permissions.assert(
+      me,
+      'acogida.ver',
+      undefined,
+      'Solo los pastores y el equipo de Acogida ven a las personas nuevas.',
+    );
   }
 
+  /** Repartir y borrar: "Acogida: coordinar" (los coordinadores de Acogida, por su cargo). */
   private async assertCoordinator(me: AuthenticatedUser): Promise<void> {
-    const role = await this.access(me);
-    if (role === 'MEMBER') {
-      throw new ForbiddenException({
-        error: 'FORBIDDEN',
-        message: 'Solo los coordinadores de Acogida y los pastores pueden hacer esto.',
-      });
-    }
+    await this.permissions.assert(
+      me,
+      'acogida.coordinar',
+      undefined,
+      'Solo los coordinadores de Acogida y los pastores pueden hacer esto.',
+    );
   }
 
   private async findRow(id: string): Promise<NewcomerRow> {
@@ -237,21 +221,13 @@ export class NewcomersService {
     const found = await this.prisma.newcomer.count({ where: { id: { in: ids }, deletedAt: null } });
     if (found !== new Set(ids).size) throw new NotFoundException('Alguna persona ya no existe.');
     if (userId) {
-      const user = await this.prisma.user.findFirst({
-        where: {
-          id: userId,
-          deletedAt: null,
-          OR: [
-            { isPastor: true },
-            {
-              ministryMemberships: {
-                some: { leftAt: null, ministry: { slug: ACOGIDA_SLUG } },
-              },
-            },
-          ],
-        },
-      });
-      if (!user) {
+      // Del equipo de Acogida: pastor, del ministerio o con el permiso por un rol.
+      const user = await this.prisma.user.findFirst({ where: { id: userId, deletedAt: null } });
+      const inTeam =
+        user &&
+        (user.isPastor ||
+          (await this.permissions.grantsOf(user.id)).some((g) => g.permission === 'acogida.ver'));
+      if (!inTeam) {
         throw new BadRequestException({
           error: 'NOT_IN_ACOGIDA',
           message: 'El responsable tiene que ser del equipo de Acogida.',
