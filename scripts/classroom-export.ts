@@ -12,6 +12,8 @@
  *   pnpm classroom:export
  *   pnpm classroom:export --credentials ./classroom-credentials.json --out ./classroom-export
  *   pnpm classroom:export --download   # también baja los adjuntos (no los videos)
+ *   pnpm classroom:export --download --videos   # y los videos (a files/<id>.source,
+ *                                                # para comprimirlos antes de subirlos)
  *
  * Necesita un OAuth client de tipo "Aplicación de escritorio" del proyecto
  * alumbra-504117 (ver docs/classroom-migration.md). Ni ese archivo ni la
@@ -24,11 +26,12 @@ import {
 } from '@googleapis/classroom';
 import { drive as driveApi } from '@googleapis/drive';
 import { execFile } from 'node:child_process';
-import { existsSync } from 'node:fs';
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { createWriteStream, existsSync } from 'node:fs';
+import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
 import { createServer } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { join, resolve } from 'node:path';
+import { pipeline } from 'node:stream/promises';
 import { parseArgs } from 'node:util';
 
 /** Lo más pesado que se baja; los videos quedan como enlace. */
@@ -146,6 +149,7 @@ async function main() {
       credentials: { type: 'string', default: './classroom-credentials.json' },
       out: { type: 'string', default: './classroom-export' },
       download: { type: 'boolean', default: false },
+      videos: { type: 'boolean', default: false },
     },
   });
   const credentials = resolve(values.credentials!);
@@ -360,7 +364,29 @@ async function main() {
       size?: string;
     }>) {
       const size = Number(f.size ?? 0);
-      if (f.mimeType.startsWith('video/') || size > MAX_DOWNLOAD_BYTES) {
+      const isVideo = f.mimeType.startsWith('video/');
+      if (isVideo && values.videos) {
+        // Los videos van por streaming (pesan GB) y quedan como .source: se
+        // comprimen aparte y el resultado es el que se sube.
+        const source = join(filesDir, `${f.id}.source`);
+        if (existsSync(source) || existsSync(join(filesDir, f.id))) continue;
+        await safe(
+          `descargar ${f.name}`,
+          driveErrors,
+          async () => {
+            const res = await drive.files.get(
+              { fileId: f.id, alt: 'media', supportsAllDrives: true },
+              { responseType: 'stream' },
+            );
+            await pipeline(res.data as NodeJS.ReadableStream, createWriteStream(`${source}.part`));
+            await rename(`${source}.part`, source);
+            console.log(`    · bajado: ${f.name} (${(size / 1024 / 1024).toFixed(0)} MB)`);
+          },
+          undefined,
+        );
+        continue;
+      }
+      if (isVideo || size > MAX_DOWNLOAD_BYTES) {
         console.log(`    · se deja como enlace: ${f.name}`);
         continue;
       }
