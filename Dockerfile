@@ -38,6 +38,9 @@ FROM base AS runtime
 
 ENV NODE_ENV=production
 
+# ffmpeg: el trabajo video-hls (misma imagen) pasa los videos a HLS.
+RUN apk add --no-cache ffmpeg
+
 COPY --from=build /app/node_modules ./node_modules
 COPY --from=build /app/dist ./dist
 COPY --from=build /app/prisma ./prisma

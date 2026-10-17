@@ -1,4 +1,5 @@
 import { Test } from '@nestjs/testing';
+import { VideoProcessingService } from '../media/video-processing.service';
 import { PrismaClient, User } from '@prisma/client';
 import { wipeDb } from '../../test/setup/wipe-db';
 import { requireLocalDb } from '../../test/setup/require-local-db';
@@ -46,7 +47,11 @@ describe('FeedService', () => {
   beforeAll(async () => {
     requireLocalDb();
     const moduleRef = await Test.createTestingModule({
-      providers: [FeedService, PrismaService],
+      providers: [
+        FeedService,
+        PrismaService,
+        { provide: VideoProcessingService, useValue: { enqueue: () => undefined } },
+      ],
     }).compile();
     service = moduleRef.get(FeedService);
     prisma = moduleRef.get(PrismaService);

@@ -177,6 +177,25 @@ gcloud iam service-accounts add-iam-policy-binding "$SA" --project "$PROJECT_ID"
   --member "serviceAccount:${SA}" --role roles/iam.serviceAccountTokenCreator
 ```
 
+### Videos (HLS)
+
+Los videos se ven por streaming HLS: un archivo de video y una lista `.m3u8`
+que lo pide por rangos de bytes (la API firma el archivo al servir la lista).
+Lo que se publica se convierte solo: la API lanza el trabajo de Cloud Run
+`video-hls` (misma imagen, con ffmpeg), que `scripts/deploy.sh` actualiza en
+cada despliegue. Para videos que no vinieron por la app: `pnpm video:hls`.
+
+Una sola vez, después del primer despliegue (cuando el trabajo ya existe), la
+service account necesita poder lanzarlo con argumentos:
+
+```bash
+gcloud run jobs add-iam-policy-binding video-hls --region "$REGION" --project "$PROJECT_ID" \
+  --member "serviceAccount:${SA}" --role roles/run.developer
+
+gcloud iam service-accounts add-iam-policy-binding "$SA" --project "$PROJECT_ID" \
+  --member "serviceAccount:${SA}" --role roles/iam.serviceAccountUser
+```
+
 ---
 
 ## 2. Desplegar

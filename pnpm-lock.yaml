@@ -54,7 +54,7 @@ importers:
         specifier: ^1.4.7
         version: 1.4.7
       google-auth-library:
-        specifier: ^9
+        specifier: ^9.15.1
         version: 9.15.1
       graphql:
         specifier: ^16

@@ -17,6 +17,11 @@ const envSchema = z.object({
   // Bucket de GCS para los archivos subidos. Sin él se guardan en la carpeta
   // local uploads/ (desarrollo y tests).
   GCS_BUCKET: z.string().optional(),
+  // Trabajo de Cloud Run que pasa los videos a HLS
+  // (projects/<p>/locations/<r>/jobs/<nombre>). Sin él, se hace en el proceso.
+  VIDEO_JOB: z.string().optional(),
+  // "off" desactiva el procesamiento de videos (tests).
+  VIDEO_PROCESSING: z.enum(['on', 'off']).optional(),
   // Uno o varios orígenes separados por comas: el sitio se sirve en el dominio
   // apex y en www, y son orígenes distintos para el navegador.
   CORS_ORIGIN: z

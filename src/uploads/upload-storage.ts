@@ -1,7 +1,7 @@
 import { Storage, type Bucket } from '@google-cloud/storage';
 import { createHmac, timingSafeEqual } from 'node:crypto';
 import { existsSync, mkdirSync } from 'node:fs';
-import { readFile, writeFile } from 'node:fs/promises';
+import { copyFile, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
 export const UPLOAD_DIR = process.env.UPLOAD_DIR ?? join(process.cwd(), 'uploads');
@@ -39,6 +39,12 @@ export abstract class UploadStorage {
 
   /** El contenido de un archivo de texto (las listas .m3u8 de los videos); null si no existe. */
   abstract readText(name: string): Promise<string | null>;
+
+  /** Baja un archivo guardado a una ruta local (para procesar videos). */
+  abstract download(name: string, destination: string): Promise<void>;
+
+  /** Sube un archivo local con ese nombre (resultado de procesar un video). */
+  abstract uploadFile(source: string, name: string, contentType: string): Promise<void>;
 }
 
 /**
@@ -75,6 +81,14 @@ export class GcsUploadStorage extends UploadStorage {
       extensionHeaders: headers,
     });
     return { uploadUrl, method: 'PUT', headers: { 'Content-Type': contentType, ...headers } };
+  }
+
+  async download(name: string, destination: string): Promise<void> {
+    await this.bucket.file(name).download({ destination });
+  }
+
+  async uploadFile(source: string, name: string, contentType: string): Promise<void> {
+    await this.bucket.upload(source, { destination: name, contentType, resumable: true });
   }
 
   async readText(name: string): Promise<string | null> {
@@ -136,6 +150,14 @@ export class DiskUploadStorage extends UploadStorage {
 
   async readUrl(): Promise<null> {
     return null;
+  }
+
+  async download(name: string, destination: string): Promise<void> {
+    await copyFile(join(UPLOAD_DIR, name), destination);
+  }
+
+  async uploadFile(source: string, name: string): Promise<void> {
+    await copyFile(source, join(UPLOAD_DIR, name));
   }
 
   async readText(name: string): Promise<string | null> {

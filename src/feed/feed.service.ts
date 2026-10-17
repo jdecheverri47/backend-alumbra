@@ -8,6 +8,7 @@ import {
 import { PostComment, Prisma, ReactionType, User } from '@prisma/client';
 import { decodeCursor, encodeCursor } from '../common/pagination/encode-cursor';
 import { PaginationInput } from '../common/pagination/pagination.input';
+import { VideoProcessingService } from '../media/video-processing.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuthenticatedUser } from '../auth/types/authenticated-user';
 import { canSeeMembersOnly } from '../events/event-visibility';
@@ -19,7 +20,10 @@ import { POST_INCLUDE, PostRow, toPostModel } from './dto/to-post-model';
 
 @Injectable()
 export class FeedService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly video: VideoProcessingService,
+  ) {}
 
   /**
    * Publican pastores, líderes designados, líderes de grupo y líderes de
@@ -61,7 +65,7 @@ export class FeedService {
       if (!event) throw new NotFoundException(`Event ${data.eventId} not found.`);
     }
 
-    return this.prisma.post.create({
+    const post = await this.prisma.post.create({
       data: {
         authorId: me.sub,
         type: data.type,
@@ -91,6 +95,9 @@ export class FeedService {
       },
       include: POST_INCLUDE,
     });
+    // Los videos se pasan a HLS por detrás para que arranquen rápido.
+    this.video.enqueue(data.media.filter((m) => m.kind === 'VIDEO').map((m) => m.url));
+    return post;
   }
 
   /** La encuesta del post con sus conteos y lo que votó `viewerId`; null si no tiene. */

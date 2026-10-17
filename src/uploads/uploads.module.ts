@@ -22,5 +22,6 @@ import { UploadsController } from './uploads.controller';
       },
     },
   ],
+  exports: [UploadStorage],
 })
 export class UploadsModule {}

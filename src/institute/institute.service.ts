@@ -14,6 +14,7 @@ import {
 } from '@prisma/client';
 import { z } from 'zod';
 import { AuthenticatedUser } from '../auth/types/authenticated-user';
+import { VideoProcessingService } from '../media/video-processing.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { toUserModel } from '../users/dto/to-user-model';
 import { InstituteItemStatus } from './dto/institute-enums';
@@ -113,7 +114,10 @@ function statusOf(item: Pick<InstituteItem, 'publishAt'>, now = new Date()): Ins
  */
 @Injectable()
 export class InstituteService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly video: VideoProcessingService,
+  ) {}
 
   private async accessOf(me: AuthenticatedUser): Promise<Access> {
     const enrollment = await this.prisma.instituteEnrollment.findFirst({
@@ -285,6 +289,8 @@ export class InstituteService {
         include: ITEM_INCLUDE,
       });
     });
+    // Los videos subidos se pasan a HLS por detrás para que arranquen rápido.
+    this.video.enqueue(attachments.filter((a) => a.kind === 'FILE').map((a) => a.url));
     return this.toItem(item, { turnedInCount: 0 });
   }
 

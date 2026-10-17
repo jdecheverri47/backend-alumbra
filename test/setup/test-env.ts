@@ -6,3 +6,6 @@ process.env.DATABASE_URL =
 
 // Los archivos de los tests van a la carpeta local, nunca a un bucket real.
 delete process.env.GCS_BUCKET;
+delete process.env.VIDEO_JOB;
+// Los videos falsos de los tests no se procesan.
+process.env.VIDEO_PROCESSING = 'off';
