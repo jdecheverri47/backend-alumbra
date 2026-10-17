@@ -470,6 +470,53 @@ enum InstituteAttachmentKind {
   YOUTUBE
 }
 
+type InstituteCalendarEntry {
+  """Alumnos: ya la entregó o tiene nota."""
+  done: Boolean!
+  endsAt: DateTime
+
+  """Id de la clase o de la tarea."""
+  id: ID!
+  itemKind: InstituteItemKind
+  location: String
+  meetingUrl: String
+  moduleTitle: String!
+
+  """Inicio de la clase o fecha límite de la entrega."""
+  startsAt: DateTime!
+  title: String!
+  type: InstituteCalendarEntryType!
+}
+
+enum InstituteCalendarEntryType {
+  CLASS
+  DEADLINE
+}
+
+type InstituteClass {
+  description: String
+  endsAt: DateTime
+  id: ID!
+  location: String
+  meetingUrl: String
+  moduleId: ID!
+  moduleTitle: String!
+  startsAt: DateTime!
+  title: String!
+}
+
+input InstituteClassInput {
+  description: String
+  endsAt: DateTime
+  location: String
+
+  """Enlace para conectarse (YouTube, Meet…)."""
+  meetingUrl: String
+  moduleId: ID!
+  startsAt: DateTime!
+  title: String!
+}
+
 input InstituteEnrollInput {
   role: InstituteRole! = STUDENT
   userIds: [ID!]!
@@ -726,6 +773,7 @@ type Mutation {
   createEvent(input: CreateEventInput!): Event!
   createGroup(input: CreateGroupInput!): Group!
   createGroupSession(input: CreateGroupSessionInput!): GroupSession!
+  createInstituteClass(input: InstituteClassInput!): InstituteClass!
   createInstituteItem(input: InstituteItemInput!): InstituteItem!
   createInstituteModule(input: InstituteModuleInput!): InstituteModule!
   createMinistry(input: CreateMinistryInput!): Ministry!
@@ -736,6 +784,7 @@ type Mutation {
   """Aplaza al candidato a una próxima ruta."""
   deferJourney(id: ID!, notes: String): MembershipJourney!
   deleteEvent(id: ID!): Event!
+  deleteInstituteClass(id: ID!): Boolean!
   deleteInstituteItem(id: ID!): Boolean!
   deleteNewcomer(id: ID!): Newcomer!
   deletePost(id: ID!): Post!
@@ -810,6 +859,7 @@ type Mutation {
   undoCheckIn(sessionId: ID!, userId: ID!): Boolean!
   updateEvent(id: ID!, input: UpdateEventInput!): Event!
   updateGroup(id: ID!, input: UpdateGroupInput!): Group!
+  updateInstituteClass(id: ID!, input: InstituteClassInput!): InstituteClass!
   updateInstituteItem(id: ID!, input: InstituteItemInput!): InstituteItem!
   updateInstituteModule(id: ID!, input: InstituteModuleInput!): InstituteModule!
   updateMinistry(id: ID!, input: UpdateMinistryInput!): Ministry!
@@ -1053,6 +1103,14 @@ type Query {
 
   """Todos los grupos (solo pastores)."""
   groups(includeArchived: Boolean! = false): [Group!]!
+
+  """
+  Clases y fechas límite del instituto en [from, to] para el calendario. Vacío si no está inscrito.
+  """
+  instituteCalendar(from: DateTime!, to: DateTime!): [InstituteCalendarEntry!]!
+
+  """Clases programadas del instituto."""
+  instituteClasses: [InstituteClass!]!
   instituteGradebook: InstituteGradebook!
   instituteModules: [InstituteModule!]!
   instituteRoster: [InstituteEnrollment!]!

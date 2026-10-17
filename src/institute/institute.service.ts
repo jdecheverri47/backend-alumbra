@@ -19,6 +19,9 @@ import { toUserModel } from '../users/dto/to-user-model';
 import { InstituteItemStatus } from './dto/institute-enums';
 import {
   InstituteAccessModel,
+  InstituteCalendarEntryModel,
+  InstituteCalendarEntryType,
+  InstituteClassModel,
   InstituteEnrollmentModel,
   InstituteGradebookModel,
   InstituteItemModel,
@@ -61,6 +64,27 @@ const itemSchema = z
   })
   // Un material no se entrega ni se califica.
   .transform((d) => (d.kind === 'MATERIAL' ? { ...d, maxPoints: null, dueAt: null } : d));
+
+const classSchema = z
+  .object({
+    moduleId: z.string().min(1),
+    title: z.string().trim().min(1).max(200),
+    description: z.string().trim().max(5000).nullish(),
+    startsAt: z.coerce.date(),
+    endsAt: z.coerce.date().nullish(),
+    location: z.string().trim().max(200).nullish(),
+    meetingUrl: z
+      .string()
+      .trim()
+      .max(1000)
+      .refine((u) => /^https?:\/\//.test(u), 'El enlace tiene que empezar por https://')
+      .nullish()
+      .or(z.literal('').transform(() => null)),
+  })
+  .refine((d) => !d.endsAt || d.endsAt > d.startsAt, {
+    message: 'La clase tiene que terminar después de empezar.',
+    path: ['endsAt'],
+  });
 
 const gradeSchema = z.object({
   itemId: z.string().min(1),
@@ -490,5 +514,133 @@ export class InstituteService {
         }))
         .sort((a, b) => a.student.fullName.localeCompare(b.student.fullName, 'es')),
     };
+  }
+
+  /** Las clases programadas (pasadas y futuras), las más próximas primero. */
+  async classes(me: AuthenticatedUser): Promise<InstituteClassModel[]> {
+    await this.assertView(me);
+    const rows = await this.prisma.instituteClass.findMany({
+      where: { deletedAt: null, module: { archivedAt: null } },
+      include: { module: true },
+      orderBy: { startsAt: 'asc' },
+    });
+    return rows.map((c) => this.toClass(c));
+  }
+
+  private toClass(c: {
+    id: string;
+    moduleId: string;
+    module: { title: string };
+    title: string;
+    description: string | null;
+    startsAt: Date;
+    endsAt: Date | null;
+    location: string | null;
+    meetingUrl: string | null;
+  }): InstituteClassModel {
+    return {
+      id: c.id,
+      moduleId: c.moduleId,
+      moduleTitle: c.module.title,
+      title: c.title,
+      description: c.description,
+      startsAt: c.startsAt,
+      endsAt: c.endsAt,
+      location: c.location,
+      meetingUrl: c.meetingUrl,
+    };
+  }
+
+  async saveClass(
+    me: AuthenticatedUser,
+    id: string | null,
+    raw: unknown,
+  ): Promise<InstituteClassModel> {
+    await this.assertManage(me);
+    const data = classSchema.parse(raw);
+    const module = await this.prisma.instituteModule.findFirst({
+      where: { id: data.moduleId, archivedAt: null },
+    });
+    if (!module) throw new NotFoundException(`Module ${data.moduleId} not found.`);
+    const row = id
+      ? await this.prisma.instituteClass.update({ where: { id }, data, include: { module: true } })
+      : await this.prisma.instituteClass.create({
+          data: { ...data, createdById: me.sub },
+          include: { module: true },
+        });
+    return this.toClass(row);
+  }
+
+  async deleteClass(me: AuthenticatedUser, id: string): Promise<boolean> {
+    await this.assertManage(me);
+    await this.prisma.instituteClass.update({ where: { id }, data: { deletedAt: new Date() } });
+    return true;
+  }
+
+  /**
+   * Lo del instituto para el calendario de la iglesia: clases programadas y
+   * fechas límite de tareas y exámenes. A quien no está inscrito no le
+   * devuelve nada (no es un error: el calendario es de todos).
+   */
+  async calendar(
+    me: AuthenticatedUser,
+    from: Date,
+    to: Date,
+  ): Promise<InstituteCalendarEntryModel[]> {
+    const a = await this.accessOf(me);
+    const manager = a.isPastor || a.role === 'TEACHER';
+    if (!manager && a.role !== 'STUDENT') return [];
+    const now = new Date();
+
+    const [classes, items] = await Promise.all([
+      this.prisma.instituteClass.findMany({
+        where: { deletedAt: null, startsAt: { gte: from, lte: to }, module: { archivedAt: null } },
+        include: { module: true },
+      }),
+      this.prisma.instituteItem.findMany({
+        where: {
+          deletedAt: null,
+          kind: { not: 'MATERIAL' },
+          dueAt: { gte: from, lte: to },
+          module: { archivedAt: null },
+          // Los alumnos no ven lo que todavía no se publica.
+          ...(manager ? { publishAt: { not: null } } : { publishAt: { lte: now } }),
+        },
+        include: {
+          module: true,
+          submissions: manager ? false : { where: { studentId: me.sub } },
+        },
+      }),
+    ]);
+
+    return [
+      ...classes.map((c) => ({
+        id: c.id,
+        type: InstituteCalendarEntryType.CLASS,
+        title: c.title,
+        startsAt: c.startsAt,
+        endsAt: c.endsAt,
+        moduleTitle: c.module.title,
+        itemKind: null,
+        location: c.location,
+        meetingUrl: c.meetingUrl,
+        done: false,
+      })),
+      ...items.map((i) => {
+        const mine = (i as { submissions?: InstituteSubmission[] }).submissions?.[0];
+        return {
+          id: i.id,
+          type: InstituteCalendarEntryType.DEADLINE,
+          title: i.title,
+          startsAt: i.dueAt!,
+          endsAt: null,
+          moduleTitle: i.module.title,
+          itemKind: i.kind,
+          location: null,
+          meetingUrl: null,
+          done: Boolean(mine && (mine.state || mine.grade != null)),
+        };
+      }),
+    ];
   }
 }

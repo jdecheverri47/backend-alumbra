@@ -3,6 +3,7 @@ import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { AuthenticatedUser } from '../auth/types/authenticated-user';
 import { InstituteRole } from './dto/institute-enums';
 import {
+  InstituteClassInput,
   InstituteEnrollInput,
   InstituteGradeInput,
   InstituteItemInput,
@@ -10,6 +11,8 @@ import {
 } from './dto/institute.inputs';
 import {
   InstituteAccessModel,
+  InstituteCalendarEntryModel,
+  InstituteClassModel,
   InstituteEnrollmentModel,
   InstituteGradebookModel,
   InstituteItemModel,
@@ -128,5 +131,47 @@ export class InstituteResolver {
     @Args('enrollmentId', { type: () => ID }) enrollmentId: string,
   ): Promise<boolean> {
     return this.service.unenroll(me, enrollmentId);
+  }
+
+  @Query(() => [InstituteClassModel], { description: 'Clases programadas del instituto.' })
+  async instituteClasses(@CurrentUser() me: AuthenticatedUser): Promise<InstituteClassModel[]> {
+    return this.service.classes(me);
+  }
+
+  @Query(() => [InstituteCalendarEntryModel], {
+    description:
+      'Clases y fechas límite del instituto en [from, to] para el calendario. Vacío si no está inscrito.',
+  })
+  async instituteCalendar(
+    @CurrentUser() me: AuthenticatedUser,
+    @Args('from', { type: () => Date }) from: Date,
+    @Args('to', { type: () => Date }) to: Date,
+  ): Promise<InstituteCalendarEntryModel[]> {
+    return this.service.calendar(me, from, to);
+  }
+
+  @Mutation(() => InstituteClassModel)
+  async createInstituteClass(
+    @CurrentUser() me: AuthenticatedUser,
+    @Args('input') input: InstituteClassInput,
+  ): Promise<InstituteClassModel> {
+    return this.service.saveClass(me, null, input);
+  }
+
+  @Mutation(() => InstituteClassModel)
+  async updateInstituteClass(
+    @CurrentUser() me: AuthenticatedUser,
+    @Args('id', { type: () => ID }) id: string,
+    @Args('input') input: InstituteClassInput,
+  ): Promise<InstituteClassModel> {
+    return this.service.saveClass(me, id, input);
+  }
+
+  @Mutation(() => Boolean)
+  async deleteInstituteClass(
+    @CurrentUser() me: AuthenticatedUser,
+    @Args('id', { type: () => ID }) id: string,
+  ): Promise<boolean> {
+    return this.service.deleteClass(me, id);
   }
 }

@@ -1,4 +1,4 @@
-import { Field, Float, ID, Int, ObjectType } from '@nestjs/graphql';
+import { Field, Float, ID, Int, ObjectType, registerEnumType } from '@nestjs/graphql';
 import { UserModel } from '../../users/dto/user.model';
 import {
   InstituteAttachmentKind,
@@ -189,4 +189,73 @@ export class InstituteGradebookModel {
 
   @Field(() => [InstituteGradebookRowModel])
   rows!: InstituteGradebookRowModel[];
+}
+
+@ObjectType('InstituteClass')
+export class InstituteClassModel {
+  @Field(() => ID)
+  id!: string;
+
+  @Field(() => ID)
+  moduleId!: string;
+
+  @Field()
+  moduleTitle!: string;
+
+  @Field()
+  title!: string;
+
+  @Field(() => String, { nullable: true })
+  description?: string | null;
+
+  @Field(() => Date)
+  startsAt!: Date;
+
+  @Field(() => Date, { nullable: true })
+  endsAt?: Date | null;
+
+  @Field(() => String, { nullable: true })
+  location?: string | null;
+
+  @Field(() => String, { nullable: true })
+  meetingUrl?: string | null;
+}
+
+export enum InstituteCalendarEntryType {
+  CLASS = 'CLASS',
+  DEADLINE = 'DEADLINE',
+}
+registerEnumType(InstituteCalendarEntryType, { name: 'InstituteCalendarEntryType' });
+
+@ObjectType('InstituteCalendarEntry')
+export class InstituteCalendarEntryModel {
+  @Field(() => ID, { description: 'Id de la clase o de la tarea.' })
+  id!: string;
+
+  @Field(() => InstituteCalendarEntryType)
+  type!: InstituteCalendarEntryType;
+
+  @Field()
+  title!: string;
+
+  @Field(() => Date, { description: 'Inicio de la clase o fecha límite de la entrega.' })
+  startsAt!: Date;
+
+  @Field(() => Date, { nullable: true })
+  endsAt?: Date | null;
+
+  @Field()
+  moduleTitle!: string;
+
+  @Field(() => InstituteItemKind, { nullable: true })
+  itemKind?: InstituteItemKind | null;
+
+  @Field(() => String, { nullable: true })
+  location?: string | null;
+
+  @Field(() => String, { nullable: true })
+  meetingUrl?: string | null;
+
+  @Field({ description: 'Alumnos: ya la entregó o tiene nota.' })
+  done!: boolean;
 }

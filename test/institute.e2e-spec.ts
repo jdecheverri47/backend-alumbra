@@ -187,4 +187,71 @@ describe('Instituto Bíblico (e2e)', () => {
       { student: { email: 'alumno@alumbra.test' }, grade: 18 },
     ]);
   });
+  it('el calendario muestra clases y fechas límite solo a los inscritos', async () => {
+    const mod = await gql(
+      'profe',
+      `mutation { createInstituteModule(input: { title: "Panorama AT" }) { id } }`,
+    );
+    const moduleId = mod.body.data.createInstituteModule.id;
+    const day = (n: number) => new Date(Date.now() + n * 86_400_000).toISOString();
+
+    const CLASS = `mutation($input: InstituteClassInput!) { createInstituteClass(input: $input) { id moduleTitle } }`;
+    expect(
+      errorCode(
+        await gql('alumno', CLASS, { input: { moduleId, title: 'Clase 1', startsAt: day(2) } }),
+      ),
+    ).toBe('FORBIDDEN');
+    const created = await gql('profe', CLASS, {
+      input: {
+        moduleId,
+        title: 'Clase 1',
+        startsAt: day(2),
+        location: 'Salón principal',
+        meetingUrl: '',
+      },
+    });
+    expect(created.body.data.createInstituteClass.moduleTitle).toBe('Panorama AT');
+
+    const ITEM = `mutation($input: InstituteItemInput!) { createInstituteItem(input: $input) { id } }`;
+    const tarea = await gql('profe', ITEM, {
+      input: { moduleId, kind: 'ASSIGNMENT', title: 'Tarea 1', dueAt: day(3), publishAt: day(-1) },
+    });
+    // Programado para mañana: el alumno todavía no lo ve.
+    await gql('profe', ITEM, {
+      input: {
+        moduleId,
+        kind: 'EXAM',
+        title: 'Examen programado',
+        dueAt: day(4),
+        publishAt: day(1),
+      },
+    });
+    await gql('profe', ITEM, {
+      input: { moduleId, kind: 'EXAM', title: 'Examen en borrador', dueAt: day(5) },
+    });
+
+    const CAL = `query($from: DateTime!, $to: DateTime!) {
+      instituteCalendar(from: $from, to: $to) { type title done location }
+    }`;
+    const range = { from: day(0), to: day(10) };
+    const forStudent = await gql('alumno', CAL, range);
+    expect(forStudent.body.data.instituteCalendar).toEqual(
+      expect.arrayContaining([
+        { type: 'CLASS', title: 'Clase 1', done: false, location: 'Salón principal' },
+        { type: 'DEADLINE', title: 'Tarea 1', done: false, location: null },
+      ]),
+    );
+    expect(forStudent.body.data.instituteCalendar).toHaveLength(2);
+    // El profesor ve también la del examen programado (el borrador no sale).
+    expect((await gql('profe', CAL, range)).body.data.instituteCalendar).toHaveLength(3);
+    expect((await gql('otro', CAL, range)).body.data.instituteCalendar).toEqual([]);
+
+    await gql('alumno', `mutation($id: ID!) { turnInInstituteItem(itemId: $id) { id } }`, {
+      id: tarea.body.data.createInstituteItem.id,
+    });
+    const after = await gql('alumno', CAL, range);
+    expect(
+      after.body.data.instituteCalendar.find((e: { title: string }) => e.title === 'Tarea 1').done,
+    ).toBe(true);
+  });
 });

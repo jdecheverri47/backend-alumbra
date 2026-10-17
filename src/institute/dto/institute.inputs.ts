@@ -78,3 +78,27 @@ export class InstituteEnrollInput {
   @Field(() => InstituteRole, { defaultValue: 'STUDENT' })
   role!: InstituteRole;
 }
+
+@InputType()
+export class InstituteClassInput {
+  @Field(() => ID)
+  moduleId!: string;
+
+  @Field()
+  title!: string;
+
+  @Field(() => String, { nullable: true })
+  description?: string | null;
+
+  @Field(() => Date)
+  startsAt!: Date;
+
+  @Field(() => Date, { nullable: true })
+  endsAt?: Date | null;
+
+  @Field(() => String, { nullable: true })
+  location?: string | null;
+
+  @Field(() => String, { nullable: true, description: 'Enlace para conectarse (YouTube, Meet…).' })
+  meetingUrl?: string | null;
+}
