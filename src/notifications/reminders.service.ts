@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { formatWhen } from '../common/format-date';
 import { contentNotice } from '../institute/institute-notices';
 import { PrismaService } from '../prisma/prisma.service';
+import { NotificationEmailService } from './email/notification-email.service';
 import { NotificationsService, NotifyInput } from './notifications.service';
 
 const HOUR = 60 * 60 * 1000;
@@ -21,6 +22,8 @@ export interface TickResult {
   dueSoon: number;
   classes: number;
   events: number;
+  /** Correos que salieron en esta pasada (los nuevos y los reintentos). */
+  emailed: number;
 }
 
 const place = (when: Date, location: string | null) =>
@@ -38,6 +41,7 @@ export class RemindersService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly notifications: NotificationsService,
+    private readonly email: NotificationEmailService,
   ) {}
 
   async tick(now = new Date()): Promise<TickResult> {
@@ -53,6 +57,8 @@ export class RemindersService {
       dueSoon: await this.notifications.notifyEachOnce(await this.dueSoon(now, students)),
       classes: await this.notifications.notifyEachOnce(await this.classes(now, students)),
       events: await this.notifications.notifyEachOnce(await this.events(now)),
+      // Lo que quedó pendiente (p. ej. Resend falló un momento) se reintenta aquí.
+      emailed: await this.email.sendPending(),
     };
     this.logger.log(`Recordatorios: ${JSON.stringify(result)}`);
     return result;

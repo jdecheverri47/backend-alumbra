@@ -196,6 +196,37 @@ gcloud iam service-accounts add-iam-policy-binding "$SA" --project "$PROJECT_ID"
   --member "serviceAccount:${SA}" --role roles/iam.serviceAccountUser
 ```
 
+### Correo de los avisos (Resend)
+
+Los avisos importantes (solicitudes, notas, fechas límite, asignaciones…) salen
+también por correo, desde `Alumbra <notificaciones@iglesiaalumbra.org>` y con
+respuesta a `info@iglesiaalumbra.org` (`EMAIL_FROM` y `EMAIL_REPLY_TO` para
+cambiarlos). Cada persona elige qué tipos recibe en
+`/notificaciones/preferencias`; el catálogo de tipos y lo que trae cada uno por
+defecto está en `src/notifications/catalog.ts`.
+
+Sin la API key los correos se escriben en el log y no salen. Una sola vez:
+
+1. En resend.com, agrega el dominio `iglesiaalumbra.org` y pon en el DNS los
+   registros que te da (SPF y DKIM; DMARC es opcional pero recomendable).
+   Espera a que diga *Verified*.
+2. Crea una API key con permiso solo de envío (*Sending access*) y guárdala:
+
+```bash
+printf '%s' "re_…" | gcloud secrets create alumbra-resend-api-key \
+  --data-file=- --project "$PROJECT_ID"
+gcloud secrets add-iam-policy-binding alumbra-resend-api-key \
+  --member "serviceAccount:${SA}" --role roles/secretmanager.secretAccessor \
+  --project "$PROJECT_ID"
+```
+
+3. Despliega (`./scripts/deploy.sh` la monta si existe).
+
+Los enlaces de los correos apuntan al primer origen de `CORS_ORIGIN`; si el
+frontend vive en otra dirección, fija `APP_URL`. Si Resend falla, el correo
+queda pendiente y se reintenta en cada pasada de los recordatorios (hasta 3
+veces, y nunca pasados 3 días); el aviso en la campana sale igual.
+
 ### Recordatorios (Cloud Scheduler)
 
 Los avisos que dependen de la hora salen de `POST /internal/notifications/tick`:

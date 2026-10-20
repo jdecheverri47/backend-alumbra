@@ -2,6 +2,7 @@ import { Args, ID, Int, Mutation, Query, Resolver } from '@nestjs/graphql';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { AuthenticatedUser } from '../auth/types/authenticated-user';
 import { PaginationInput } from '../common/pagination/pagination.input';
+import { NotificationPreferenceModel } from './dto/notification-preference.model';
 import { NotificationConnection, NotificationModel } from './dto/notification.model';
 import { NotificationsService } from './notifications.service';
 
@@ -34,5 +35,21 @@ export class NotificationsResolver {
   @Mutation(() => Int, { description: 'Marca todas como leídas; devuelve cuántas.' })
   markAllNotificationsRead(@CurrentUser() me: AuthenticatedUser): Promise<number> {
     return this.service.markAllRead(me.sub);
+  }
+
+  @Query(() => [NotificationPreferenceModel], { description: 'Qué avisos me llegan por correo.' })
+  notificationPreferences(
+    @CurrentUser() me: AuthenticatedUser,
+  ): Promise<NotificationPreferenceModel[]> {
+    return this.service.preferences(me.sub);
+  }
+
+  @Mutation(() => NotificationPreferenceModel)
+  setNotificationPreference(
+    @CurrentUser() me: AuthenticatedUser,
+    @Args('type') type: string,
+    @Args('email') email: boolean,
+  ): Promise<NotificationPreferenceModel> {
+    return this.service.setPreference(me.sub, type, email);
   }
 }

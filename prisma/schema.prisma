@@ -148,6 +148,7 @@ model User {
   permissionAudits       PermissionAudit[]            @relation("PermissionAuditActor")
   reviewedAccessRequests AccessRequest[]              @relation("AccessRequestReviewer")
   notifications          Notification[]               @relation("NotificationUser")
+  notificationPrefs      NotificationPreference[]
   instituteRequests      InstituteEnrollmentRequest[] @relation("InstituteRequestUser")
   reviewedInstituteReqs  InstituteEnrollmentRequest[] @relation("InstituteRequestReviewer")
   causedNotifications    Notification[]               @relation("NotificationActor")
@@ -964,22 +965,47 @@ model PermissionAudit {
 // Un aviso para una persona (la campana). `type` es la clave del catálogo en
 // src/notifications/catalog.ts; `href`, a dónde lleva al abrirlo.
 model Notification {
-  id        String    @id @default(cuid())
-  userId    String
-  type      String
-  title     String
-  body      String?
-  href      String?
+  id            String                  @id @default(cuid())
+  userId        String
+  type          String
+  title         String
+  body          String?
+  href          String?
   // Quién la provocó (p. ej. quien pidió acceso o comentó); null si fue el sistema.
-  actorId   String?
-  data      Json?
-  readAt    DateTime?
-  emailedAt DateTime?
-  createdAt DateTime  @default(now())
+  actorId       String?
+  data          Json?
+  readAt        DateTime?
+  // Si va también por correo: NONE (no), PENDING (por mandar), SENT, FAILED
+  // (se rindió tras varios intentos). Se decide al crearlo, con la preferencia
+  // de la persona.
+  emailStatus   NotificationEmailStatus @default(NONE)
+  emailAttempts Int                     @default(0)
+  emailedAt     DateTime?
+  createdAt     DateTime                @default(now())
 
   user  User  @relation("NotificationUser", fields: [userId], references: [id])
   actor User? @relation("NotificationActor", fields: [actorId], references: [id])
 
   @@index([userId, readAt])
   @@index([userId, createdAt])
+  @@index([emailStatus])
+}
+
+enum NotificationEmailStatus {
+  NONE
+  PENDING
+  SENT
+  FAILED
+}
+
+// Lo que cada persona cambió de los correos (por tipo de aviso). Sin fila,
+// vale lo que dice el catálogo. La campana no se apaga.
+model NotificationPreference {
+  userId String
+  type   String
+  email  Boolean
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@id([userId, type])
 }

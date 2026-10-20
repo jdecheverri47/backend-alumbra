@@ -952,6 +952,7 @@ type Mutation {
   """
   setMinistryRole(membershipId: ID!, role: MinistryRole!): MinistryMembership!
   setNewcomerStatus(id: ID!, status: NewcomerStatus!): Newcomer!
+  setNotificationPreference(email: Boolean!, type: String!): NotificationPreference!
   setPostPinned(id: ID!, pinned: Boolean!): Post!
 
   """Otorga o revoca el rol de líder a un miembro."""
@@ -1141,6 +1142,21 @@ type NotificationConnection {
 type NotificationEdge {
   cursor: String!
   node: Notification!
+}
+
+type NotificationPreference {
+  """Si este tipo también le llega por correo."""
+  email: Boolean!
+
+  """Lo que trae por defecto, si nunca lo cambió."""
+  emailByDefault: Boolean!
+  label: String!
+
+  """Módulo, para agrupar: Instituto, Muro, Acogida…"""
+  module: String!
+
+  """Clave del catálogo, p. ej. "instituto.nota.publicada"."""
+  type: String!
 }
 
 type PageInfo {
@@ -1374,6 +1390,9 @@ type Query {
 
   """Personas nuevas, lo más reciente primero."""
   newcomers(filter: NewcomerFilterInput): [Newcomer!]!
+
+  """Qué avisos me llegan por correo."""
+  notificationPreferences: [NotificationPreference!]!
 
   """Mis avisos, lo más reciente primero."""
   notifications(page: PaginationInput): NotificationConnection!

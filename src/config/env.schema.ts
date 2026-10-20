@@ -27,6 +27,14 @@ const envSchema = z.object({
   CRON_TOKEN: z
     .union([z.literal(''), z.string().min(32, 'CRON_TOKEN must be at least 32 characters')])
     .optional(),
+  // Correo de los avisos (Resend). Sin la API key, los correos se escriben en el
+  // log en vez de mandarse (desarrollo y tests).
+  RESEND_API_KEY: z.string().optional(),
+  EMAIL_FROM: z.string().default('Alumbra <notificaciones@iglesiaalumbra.org>'),
+  EMAIL_REPLY_TO: z.string().default('info@iglesiaalumbra.org'),
+  // Dirección del frontend para los enlaces de los correos. Sin ella, el primer
+  // origen de CORS_ORIGIN.
+  APP_URL: z.string().url().optional(),
   // Uno o varios orígenes separados por comas: el sitio se sirve en el dominio
   // apex y en www, y son orígenes distintos para el navegador.
   CORS_ORIGIN: z

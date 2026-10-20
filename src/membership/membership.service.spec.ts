@@ -7,7 +7,7 @@ import { AuthenticatedUser } from '../auth/types/authenticated-user';
 import { CoursesService } from '../courses/courses.service';
 import { GroupSessionsService } from '../group-sessions/group-sessions.service';
 import { GroupsService } from '../groups/groups.service';
-import { NotificationsService } from '../notifications/notifications.service';
+import { notificationProviders } from '../../test/setup/notification-providers';
 import { PermissionsService } from '../permissions/permissions.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { MembershipService } from './membership.service';
@@ -84,7 +84,7 @@ describe('Membership pipeline (integration)', () => {
         GroupSessionsService,
         PrismaService,
         PermissionsService,
-        NotificationsService,
+        ...notificationProviders(),
       ],
     }).compile();
     membership = moduleRef.get(MembershipService);

@@ -6,7 +6,7 @@ import { User } from '@prisma/client';
 import { hash } from 'bcryptjs';
 import { requireLocalDb } from '../../test/setup/require-local-db';
 import { AccessRequestsService } from '../access-requests/access-requests.service';
-import { NotificationsService } from '../notifications/notifications.service';
+import { notificationProviders } from '../../test/setup/notification-providers';
 import { PermissionsService } from '../permissions/permissions.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuthService, hashRefreshToken } from './auth.service';
@@ -83,7 +83,7 @@ describe('AuthService', () => {
         { provide: GoogleTokenVerifier, useValue: GOOGLE_STUB },
         AccessRequestsService,
         PermissionsService,
-        NotificationsService,
+        ...notificationProviders(),
       ],
     }).compile();
 

@@ -39,6 +39,7 @@ describe('POST /internal/notifications/tick (e2e)', () => {
       dueSoon: expect.any(Number),
       classes: expect.any(Number),
       events: expect.any(Number),
+      emailed: expect.any(Number),
     });
   });
 });

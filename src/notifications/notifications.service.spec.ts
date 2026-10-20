@@ -3,6 +3,7 @@ import { requireLocalDb } from '../../test/setup/require-local-db';
 import { wipeDb } from '../../test/setup/wipe-db';
 import { PrismaService } from '../prisma/prisma.service';
 import { NotificationsService } from './notifications.service';
+import { notificationProviders } from '../../test/setup/notification-providers';
 
 describe('NotificationsService', () => {
   let service: NotificationsService;
@@ -18,7 +19,7 @@ describe('NotificationsService', () => {
   beforeAll(async () => {
     requireLocalDb();
     const moduleRef = await Test.createTestingModule({
-      providers: [NotificationsService, PrismaService],
+      providers: [...notificationProviders(), PrismaService],
     }).compile();
     service = moduleRef.get(NotificationsService);
     prisma = moduleRef.get(PrismaService);

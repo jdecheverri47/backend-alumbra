@@ -31,6 +31,9 @@ SECRET_JWT="${SECRET_JWT:-alumbra-jwt-secret:latest}"
 # Opcional: si el secreto aún no existe, se despliega sin él y el endpoint
 # responde 503. Ver "Recordatorios" en docs/deploy-gcp.md.
 SECRET_CRON="${SECRET_CRON:-alumbra-cron-token}"
+# API key de Resend para los correos de los avisos. Opcional igual: sin ella,
+# los correos se escriben en el log del servicio.
+SECRET_RESEND="${SECRET_RESEND:-alumbra-resend-api-key}"
 
 # Variables de entorno de la app. CORS_ORIGIN son los orígenes exactos del
 # frontend (con esquema, sin barra final) o el login por cookie no funciona.
@@ -85,6 +88,11 @@ if gcloud secrets describe "${SECRET_CRON}" --project "${PROJECT_ID}" >/dev/null
   SECRETS="${SECRETS},CRON_TOKEN=${SECRET_CRON}:latest"
 else
   echo "    (sin ${SECRET_CRON}: los recordatorios quedan apagados)"
+fi
+if gcloud secrets describe "${SECRET_RESEND}" --project "${PROJECT_ID}" >/dev/null 2>&1; then
+  SECRETS="${SECRETS},RESEND_API_KEY=${SECRET_RESEND}:latest"
+else
+  echo "    (sin ${SECRET_RESEND}: los correos van al log, no salen)"
 fi
 
 gcloud run deploy "${SERVICE}" \

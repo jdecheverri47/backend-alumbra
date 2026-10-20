@@ -1,9 +1,11 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { BadRequestException, Injectable, Logger } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { decodeCursor } from '../common/pagination/encode-cursor';
 import { PaginationInput } from '../common/pagination/pagination.input';
 import { PrismaService } from '../prisma/prisma.service';
-import { NotificationType } from './catalog';
+import { NOTIFICATION_TYPES, NotificationType } from './catalog';
+import { NotificationPreferenceModel } from './dto/notification-preference.model';
+import { NotificationEmailService } from './email/notification-email.service';
 import { NotificationConnection, toNotificationEdge } from './dto/notification.model';
 
 export type NotificationResolution = 'APPROVED' | 'REJECTED' | 'CANCELLED';
@@ -37,7 +39,10 @@ export function excerpt(text: string | null | undefined, max = 140): string | nu
 export class NotificationsService {
   private readonly logger = new Logger(NotificationsService.name);
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly email: NotificationEmailService,
+  ) {}
 
   notify(input: NotifyInput): Promise<void> {
     return this.notifyEach([input]);
@@ -64,7 +69,10 @@ export class NotificationsService {
           })
         ).map((u) => u.id),
       );
-      await this.prisma.notification.createMany({
+      const types = [...new Set(inputs.map((i) => i.type))];
+      const optedOut = await this.emailOptOuts([...reachable], types);
+      const created = await this.prisma.notification.createManyAndReturn({
+        select: { id: true, emailStatus: true },
         data: wanted.flatMap(({ input, ids }) =>
           ids
             .filter((id) => reachable.has(id))
@@ -76,13 +84,74 @@ export class NotificationsService {
               href: input.href ?? null,
               actorId: input.actorId ?? null,
               data: input.data,
+              emailStatus: optedOut.has(`${userId}:${input.type}`)
+                ? ('NONE' as const)
+                : ('PENDING' as const),
             })),
         ),
       });
+      // Los correos salen ya; los que fallen los reintentan los recordatorios.
+      await this.email.sendPending(
+        created.filter((n) => n.emailStatus === 'PENDING').map((n) => n.id),
+      );
     } catch (e) {
       const types = [...new Set(inputs.map((i) => i.type))].join(', ');
       this.logger.error(`No se pudo crear el aviso ${types}`, e as Error);
     }
+  }
+
+  /**
+   * "userId:type" de quien NO quiere ese tipo por correo: por el catálogo
+   * (si no lo cambió) o porque lo apagó.
+   */
+  private async emailOptOuts(userIds: string[], types: NotificationType[]): Promise<Set<string>> {
+    const prefs = await this.prisma.notificationPreference.findMany({
+      where: { userId: { in: userIds }, type: { in: types } },
+    });
+    const chosen = new Map(prefs.map((p) => [`${p.userId}:${p.type}`, p.email]));
+    const out = new Set<string>();
+    for (const userId of userIds) {
+      for (const type of types) {
+        const key = `${userId}:${type}`;
+        if (!(chosen.get(key) ?? NOTIFICATION_TYPES[type].email)) out.add(key);
+      }
+    }
+    return out;
+  }
+
+  /** Qué correos recibe cada quien, tipo por tipo, en el orden del catálogo. */
+  async preferences(userId: string): Promise<NotificationPreferenceModel[]> {
+    const prefs = await this.prisma.notificationPreference.findMany({ where: { userId } });
+    const chosen = new Map(prefs.map((p) => [p.type, p.email]));
+    return Object.entries(NOTIFICATION_TYPES).map(([type, def]) => ({
+      type,
+      module: def.module,
+      label: def.label,
+      email: chosen.get(type) ?? def.email,
+      emailByDefault: def.email,
+    }));
+  }
+
+  async setPreference(
+    userId: string,
+    type: string,
+    email: boolean,
+  ): Promise<NotificationPreferenceModel> {
+    const def = NOTIFICATION_TYPES[type as NotificationType];
+    if (!def) throw new BadRequestException(`Tipo de aviso desconocido: ${type}`);
+    await this.prisma.notificationPreference.upsert({
+      where: { userId_type: { userId, type } },
+      create: { userId, type, email },
+      update: { email },
+    });
+    // Lo que quedó por mandar de ese tipo también respeta el cambio.
+    if (!email) {
+      await this.prisma.notification.updateMany({
+        where: { userId, type, emailStatus: 'PENDING' },
+        data: { emailStatus: 'NONE' },
+      });
+    }
+    return { type, module: def.module, label: def.label, email, emailByDefault: def.email };
   }
 
   /**

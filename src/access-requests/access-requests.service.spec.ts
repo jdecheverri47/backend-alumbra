@@ -1,7 +1,7 @@
 import { Test } from '@nestjs/testing';
 import { requireLocalDb } from '../../test/setup/require-local-db';
 import { wipeDb } from '../../test/setup/wipe-db';
-import { NotificationsService } from '../notifications/notifications.service';
+import { notificationProviders } from '../../test/setup/notification-providers';
 import { PermissionsService } from '../permissions/permissions.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { AccessRequestsService } from './access-requests.service';
@@ -27,7 +27,12 @@ describe('AccessRequestsService', () => {
   beforeAll(async () => {
     requireLocalDb();
     const moduleRef = await Test.createTestingModule({
-      providers: [AccessRequestsService, PrismaService, PermissionsService, NotificationsService],
+      providers: [
+        AccessRequestsService,
+        PrismaService,
+        PermissionsService,
+        ...notificationProviders(),
+      ],
     }).compile();
     service = moduleRef.get(AccessRequestsService);
     prisma = moduleRef.get(PrismaService);

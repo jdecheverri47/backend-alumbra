@@ -2,7 +2,7 @@ import { Test } from '@nestjs/testing';
 import { requireLocalDb } from '../../test/setup/require-local-db';
 import { wipeDb } from '../../test/setup/wipe-db';
 import { PrismaService } from '../prisma/prisma.service';
-import { NotificationsService } from './notifications.service';
+import { notificationProviders } from '../../test/setup/notification-providers';
 import { RemindersService } from './reminders.service';
 
 const NOW = new Date('2026-11-02T15:00:00Z');
@@ -38,7 +38,7 @@ describe('RemindersService', () => {
   beforeAll(async () => {
     requireLocalDb();
     const moduleRef = await Test.createTestingModule({
-      providers: [RemindersService, NotificationsService, PrismaService],
+      providers: [RemindersService, ...notificationProviders(), PrismaService],
     }).compile();
     service = moduleRef.get(RemindersService);
     prisma = moduleRef.get(PrismaService);
