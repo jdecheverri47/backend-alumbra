@@ -1,6 +1,7 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { Newcomer, NewcomerFollowUp, NewcomerStatus, Prisma, User } from '@prisma/client';
 import { AuthenticatedUser } from '../auth/types/authenticated-user';
+import { NotificationsService } from '../notifications/notifications.service';
 import { PermissionsService } from '../permissions/permissions.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { toUserModel } from '../users/dto/to-user-model';
@@ -84,6 +85,7 @@ export class NewcomersService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly permissions: PermissionsService,
+    private readonly notifications: NotificationsService,
   ) {}
 
   /** El rol de `me` en Acogida; lanza si no tiene acceso. */
@@ -238,15 +240,36 @@ export class NewcomersService {
     // Solo cambia la fecha a quien de verdad cambia de responsable: volver a
     // elegir al mismo no la debe dejar otra vez "por contactar". (El OR con
     // null es a propósito: en SQL, NOT (col = x) deja fuera los NULL.)
+    const changing = {
+      id: { in: ids },
+      ...(userId
+        ? { OR: [{ assignedToId: null }, { assignedToId: { not: userId } }] }
+        : { assignedToId: { not: null } }),
+    } satisfies Prisma.NewcomerWhereInput;
+    const newlyAssigned = userId
+      ? await this.prisma.newcomer.findMany({
+          where: changing,
+          select: { firstName: true, lastName: true },
+        })
+      : [];
     await this.prisma.newcomer.updateMany({
-      where: {
-        id: { in: ids },
-        ...(userId
-          ? { OR: [{ assignedToId: null }, { assignedToId: { not: userId } }] }
-          : { assignedToId: { not: null } }),
-      },
+      where: changing,
       data: { assignedToId: userId, assignedAt: userId ? now : null },
     });
+    if (userId && newlyAssigned.length > 0) {
+      const [one] = newlyAssigned;
+      await this.notifications.notify({
+        type: 'acogida.asignacion',
+        to: [userId],
+        title:
+          newlyAssigned.length === 1
+            ? `Te asignaron a ${one.firstName} ${one.lastName} en Acogida`
+            : `Te asignaron ${newlyAssigned.length} personas en Acogida`,
+        body: 'Pendiente de contacto y seguimiento.',
+        href: `/ministerio/${ACOGIDA_SLUG}`,
+        actorId: me.sub,
+      });
+    }
     const rows = await this.prisma.newcomer.findMany({
       where: { id: { in: ids } },
       include: NEWCOMER_INCLUDE,

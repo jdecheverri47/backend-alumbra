@@ -9,6 +9,7 @@ import { PostComment, Prisma, ReactionType, User } from '@prisma/client';
 import { decodeCursor, encodeCursor } from '../common/pagination/encode-cursor';
 import { PaginationInput } from '../common/pagination/pagination.input';
 import { VideoProcessingService } from '../media/video-processing.service';
+import { NotificationsService, excerpt } from '../notifications/notifications.service';
 import { PermissionsService } from '../permissions/permissions.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuthenticatedUser } from '../auth/types/authenticated-user';
@@ -25,6 +26,7 @@ export class FeedService {
     private readonly prisma: PrismaService,
     private readonly video: VideoProcessingService,
     private readonly permissions: PermissionsService,
+    private readonly notifications: NotificationsService,
   ) {}
 
   /**
@@ -94,6 +96,17 @@ export class FeedService {
     });
     // Los videos se pasan a HLS por detrás para que arranquen rápido.
     this.video.enqueue(data.media.filter((m) => m.kind === 'VIDEO').map((m) => m.url));
+    if (post.type === 'ANUNCIO') {
+      await this.notifications.notify({
+        type: 'muro.anuncio.nuevo',
+        to: await this.notifications.audience(post.membersOnly),
+        title: `Anuncio de ${post.author.firstName} ${post.author.lastName}`,
+        body: excerpt(post.body) ?? 'Nuevo anuncio en el muro.',
+        href: '/muro',
+        actorId: me.sub,
+        data: { refId: post.id },
+      });
+    }
     return post;
   }
 
@@ -239,11 +252,21 @@ export class FeedService {
 
   async addComment(me: AuthenticatedUser, raw: unknown): Promise<PostComment & { author: User }> {
     const { postId, body } = addCommentSchema.parse(raw);
-    await this.findByIdOrThrow(postId, me);
-    return this.prisma.postComment.create({
+    const post = await this.findByIdOrThrow(postId, me);
+    const comment = await this.prisma.postComment.create({
       data: { postId, authorId: me.sub, body },
       include: { author: true },
     });
+    await this.notifications.notify({
+      type: 'muro.comentario',
+      to: [post.authorId],
+      title: `${comment.author.firstName} ${comment.author.lastName} comentó tu publicación`,
+      body: excerpt(body),
+      href: '/muro',
+      actorId: me.sub,
+      data: { refId: postId },
+    });
+    return comment;
   }
 
   async deleteComment(me: AuthenticatedUser, id: string): Promise<PostComment & { author: User }> {

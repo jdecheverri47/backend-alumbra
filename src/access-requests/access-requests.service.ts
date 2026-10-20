@@ -136,7 +136,7 @@ export class AccessRequestsService {
     await this.notifications.notify({
       type: 'acceso.solicitud.aprobada',
       to: [approved.userId!],
-      title: '¡Bienvenido a Alumbra!',
+      title: '¡Te damos la bienvenida a Alumbra!',
       body: 'Ya tienes acceso. Completa tu perfil para que la iglesia te conozca.',
       href: `/perfil/${approved.userId}`,
       actorId: reviewerId,

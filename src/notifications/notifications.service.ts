@@ -21,6 +21,13 @@ export interface NotifyInput {
 
 const MAX_PAGE = 50;
 
+/** El comienzo de un texto largo, para el cuerpo de un aviso. */
+export function excerpt(text: string | null | undefined, max = 140): string | null {
+  const flat = text?.replace(/\s+/g, ' ').trim();
+  if (!flat) return null;
+  return flat.length > max ? `${flat.slice(0, max - 1).trimEnd()}…` : flat;
+}
+
 /**
  * Los avisos de la campana. Los demás módulos llaman a `notify` después de
  * guardar lo suyo: si el aviso falla se anota en el log, pero no tumba la
@@ -32,29 +39,66 @@ export class NotificationsService {
 
   constructor(private readonly prisma: PrismaService) {}
 
-  async notify(input: NotifyInput): Promise<void> {
-    const ids = [...new Set(input.to)].filter((id) => id !== input.actorId);
-    if (ids.length === 0) return;
+  notify(input: NotifyInput): Promise<void> {
+    return this.notifyEach([input]);
+  }
+
+  /**
+   * Varios avisos distintos de una vez (p. ej. a cada alumno su nota): una
+   * consulta y una escritura en total, no una por persona.
+   */
+  async notifyEach(inputs: NotifyInput[]): Promise<void> {
+    const wanted = inputs.map((input) => ({
+      input,
+      ids: [...new Set(input.to)].filter((id) => id !== input.actorId),
+    }));
+    const allIds = [...new Set(wanted.flatMap((w) => w.ids))];
+    if (allIds.length === 0) return;
     try {
       // Solo a quien puede entrar: un importado sin acceso no vería la campana.
-      const recipients = await this.prisma.user.findMany({
-        where: { id: { in: ids }, deletedAt: null, canSignIn: true },
-        select: { id: true },
-      });
+      const reachable = new Set(
+        (
+          await this.prisma.user.findMany({
+            where: { id: { in: allIds }, deletedAt: null, canSignIn: true },
+            select: { id: true },
+          })
+        ).map((u) => u.id),
+      );
       await this.prisma.notification.createMany({
-        data: recipients.map((r) => ({
-          userId: r.id,
-          type: input.type,
-          title: input.title,
-          body: input.body ?? null,
-          href: input.href ?? null,
-          actorId: input.actorId ?? null,
-          data: input.data,
-        })),
+        data: wanted.flatMap(({ input, ids }) =>
+          ids
+            .filter((id) => reachable.has(id))
+            .map((userId) => ({
+              userId,
+              type: input.type,
+              title: input.title,
+              body: input.body ?? null,
+              href: input.href ?? null,
+              actorId: input.actorId ?? null,
+              data: input.data,
+            })),
+        ),
       });
     } catch (e) {
-      this.logger.error(`No se pudo crear el aviso ${input.type}`, e as Error);
+      const types = [...new Set(inputs.map((i) => i.type))].join(', ');
+      this.logger.error(`No se pudo crear el aviso ${types}`, e as Error);
     }
+  }
+
+  /**
+   * Quienes ven algo publicado para toda la iglesia, o solo para miembros
+   * (y pastores) si `membersOnly`.
+   */
+  async audience(membersOnly: boolean): Promise<string[]> {
+    const rows = await this.prisma.user.findMany({
+      where: {
+        deletedAt: null,
+        canSignIn: true,
+        ...(membersOnly ? { OR: [{ baseRole: 'MIEMBRO' }, { isPastor: true }] } : {}),
+      },
+      select: { id: true },
+    });
+    return rows.map((r) => r.id);
   }
 
   /**

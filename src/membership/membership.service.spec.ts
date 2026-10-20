@@ -7,6 +7,7 @@ import { AuthenticatedUser } from '../auth/types/authenticated-user';
 import { CoursesService } from '../courses/courses.service';
 import { GroupSessionsService } from '../group-sessions/group-sessions.service';
 import { GroupsService } from '../groups/groups.service';
+import { NotificationsService } from '../notifications/notifications.service';
 import { PermissionsService } from '../permissions/permissions.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { MembershipService } from './membership.service';
@@ -83,6 +84,7 @@ describe('Membership pipeline (integration)', () => {
         GroupSessionsService,
         PrismaService,
         PermissionsService,
+        NotificationsService,
       ],
     }).compile();
     membership = moduleRef.get(MembershipService);
@@ -105,6 +107,9 @@ describe('Membership pipeline (integration)', () => {
   });
 
   it('recorre el pipeline completo hasta MIEMBRO con todos sus side effects', async () => {
+    // Con acceso a la app, para que le lleguen los avisos.
+    await prisma.user.update({ where: { id: candidato.id }, data: { canSignIn: true } });
+
     // 1. Pre-entrevista (la registra el líder de acogida).
     const journey = await membership.start(asAuth(entrevistador), {
       userId: candidato.id,
@@ -181,6 +186,22 @@ describe('Membership pipeline (integration)', () => {
     expect(updated.baseRole).toBe('MIEMBRO');
     expect(updated.canSignIn).toBe(true);
     expect(updated.membershipDate?.toISOString()).toContain('2026-08-08');
+
+    // Avisos: el candidato, solo de los avances; los miembros, del filtro.
+    const notes = async (userId: string) =>
+      (
+        await prisma.notification.findMany({ where: { userId }, orderBy: { createdAt: 'asc' } })
+      ).map((n) => `${n.type}: ${n.title}`);
+    expect(await notes(candidato.id)).toEqual(
+      expect.arrayContaining([
+        'ruta.etapa: Empezaste la Ruta de Crecimiento',
+        'ruta.etapa: Terminaste la Ruta de Crecimiento',
+        'ruta.etapa: ¡Ya eres miembro de Alumbra!',
+      ]),
+    );
+    expect(await notes(candidato.id)).not.toContainEqual(
+      expect.stringContaining('Filtro de iglesia'),
+    );
   });
 
   it('valida etapas y permisos: transiciones fuera de orden se rechazan', async () => {

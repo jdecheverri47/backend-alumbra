@@ -1,5 +1,6 @@
 import { Test } from '@nestjs/testing';
 import { VideoProcessingService } from '../media/video-processing.service';
+import { NotificationsService } from '../notifications/notifications.service';
 import { PermissionsService } from '../permissions/permissions.service';
 import { PrismaClient, User } from '@prisma/client';
 import { wipeDb } from '../../test/setup/wipe-db';
@@ -52,6 +53,7 @@ describe('FeedService', () => {
         FeedService,
         PrismaService,
         PermissionsService,
+        NotificationsService,
         { provide: VideoProcessingService, useValue: { enqueue: () => undefined } },
       ],
     }).compile();

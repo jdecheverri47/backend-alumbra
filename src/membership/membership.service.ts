@@ -6,6 +6,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { Group, JourneyStage, MembershipJourney, Prisma, User } from '@prisma/client';
+import { NotificationsService } from '../notifications/notifications.service';
 import { PermissionsService } from '../permissions/permissions.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuthenticatedUser } from '../auth/types/authenticated-user';
@@ -29,11 +30,26 @@ const JOURNEY_INCLUDE = {
 
 type JourneyRow = Prisma.MembershipJourneyGetPayload<{ include: typeof JOURNEY_INCLUDE }>;
 
+/** "lunes 3 de noviembre, 7:00 p. m.", en hora de Colombia. */
+function formatWhen(d: Date): string {
+  return new Intl.DateTimeFormat('es-CO', {
+    weekday: 'long',
+    day: 'numeric',
+    month: 'long',
+    hour: 'numeric',
+    minute: '2-digit',
+    timeZone: 'America/Bogota',
+  }).format(d);
+}
+
+const fullName = (u: Pick<User, 'firstName' | 'lastName'>) => `${u.firstName} ${u.lastName}`;
+
 @Injectable()
 export class MembershipService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly permissions: PermissionsService,
+    private readonly notifications: NotificationsService,
   ) {}
 
   // ── Queries ────────────────────────────────────────────────────────────────
@@ -187,6 +203,7 @@ export class MembershipService {
       data: { preInterviewAt: at, stage: 'PRE_ENTREVISTA' },
       include: JOURNEY_INCLUDE,
     });
+    await this.notifyCandidate(row, 'Tu entrevista quedó agendada', formatWhen(at), me.sub);
     return this.withProgress(row, { includeInternal: true });
   }
 
@@ -227,6 +244,15 @@ export class MembershipService {
       where: { id: journeyId },
       data: { assignedLeaderId: leaderId },
       include: JOURNEY_INCLUDE,
+    });
+    await this.notifications.notify({
+      type: 'ruta.asignacion',
+      to: [leaderId],
+      title: `Te asignaron a ${fullName(row.user)} en la Ruta`,
+      body: 'Pendiente de ubicar en una de tus cohortes.',
+      href: '/ruta',
+      actorId: me.sub,
+      data: { refId: row.id },
     });
     return this.withProgress(row, { includeInternal: true });
   }
@@ -272,6 +298,14 @@ export class MembershipService {
       },
       include: JOURNEY_INCLUDE,
     });
+    if (approved) {
+      await this.notifyCandidate(
+        row,
+        'Te validaron para la Ruta de Crecimiento',
+        'Pronto te ubicarán en una cohorte.',
+        me.sub,
+      );
+    }
     return this.toModel(row, { includeInternal: true });
   }
 
@@ -326,6 +360,21 @@ export class MembershipService {
       data: { stage: 'EN_RUTA', rutaGroupId: groupId, assignedLeaderId: group.leaderId },
       include: JOURNEY_INCLUDE,
     });
+    await this.notifyCandidate(
+      row,
+      'Empezaste la Ruta de Crecimiento',
+      `Tu cohorte: ${group.name}.`,
+      me.sub,
+    );
+    await this.notifications.notify({
+      type: 'ruta.asignacion',
+      to: [group.leaderId],
+      title: `${fullName(row.user)} entró a tu cohorte`,
+      body: group.name,
+      href: `/grupos/${group.id}`,
+      actorId: me.sub,
+      data: { refId: row.id },
+    });
     return this.toModel(row, { includeInternal: true });
   }
 
@@ -347,6 +396,12 @@ export class MembershipService {
       data: { stage: 'ENTREGA_FINAL', rutaCompletedAt: new Date() },
       include: JOURNEY_INCLUDE,
     });
+    await this.notifyCandidate(
+      row,
+      'Terminaste la Ruta de Crecimiento',
+      'Ahora entrega tu ensayo, tu testimonio y una imagen.',
+      me.sub,
+    );
     return this.toModel(row, { includeInternal: true });
   }
 
@@ -400,6 +455,16 @@ export class MembershipService {
         },
       }),
     ]);
+    // El filtro es de los miembros: a ellos (no al candidato) se les pide su observación.
+    await this.notifications.notify({
+      type: 'muro.anuncio.nuevo',
+      to: (await this.notifications.audience(true)).filter((id) => id !== candidate.id),
+      title: `Filtro de iglesia: ${fullName(candidate)}`,
+      body: 'Quiere hacer pacto de membresía. Si tienes alguna observación, déjala en su perfil.',
+      href: `/perfil/${candidate.id}`,
+      actorId: me.sub,
+      data: { refId: journeyId },
+    });
     return this.toModel(row, { includeInternal: true });
   }
 
@@ -445,6 +510,16 @@ export class MembershipService {
       },
       include: JOURNEY_INCLUDE,
     });
+    if (passed) {
+      await this.notifyCandidate(
+        row,
+        'Sigue tu entrevista con los pastores',
+        pastoralInterviewAt
+          ? `Quedó para el ${formatWhen(pastoralInterviewAt)}.`
+          : 'Te contactarán para agendarla.',
+        null,
+      );
+    }
     return this.toModel(row, { includeInternal: true });
   }
 
@@ -465,10 +540,37 @@ export class MembershipService {
         data: { baseRole: 'MIEMBRO', canSignIn: true, membershipDate: signedAt },
       }),
     ]);
+    await this.notifyCandidate(
+      row,
+      '¡Ya eres miembro de Alumbra!',
+      'Firmaste el pacto de membresía. Gracias por caminar con nosotros.',
+      null,
+    );
     return this.toModel(row, { includeInternal: true });
   }
 
   // ── Helpers ────────────────────────────────────────────────────────────────
+
+  /**
+   * Avisa a la persona en proceso de un avance. Los pasos atrás (aplazado, no
+   * continúa) no se avisan por la campana: esas noticias las da alguien en persona.
+   */
+  private notifyCandidate(
+    row: JourneyRow,
+    title: string,
+    body: string,
+    actorId: string | null,
+  ): Promise<void> {
+    return this.notifications.notify({
+      type: 'ruta.etapa',
+      to: [row.userId],
+      title,
+      body,
+      href: '/ruta',
+      actorId,
+      data: { refId: row.id, stage: row.stage },
+    });
+  }
 
   private async getOrThrow(id: string): Promise<JourneyRow> {
     const journey = await this.prisma.membershipJourney.findUnique({

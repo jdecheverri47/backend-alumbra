@@ -15,6 +15,7 @@ import {
 import { z } from 'zod';
 import { AuthenticatedUser } from '../auth/types/authenticated-user';
 import { VideoProcessingService } from '../media/video-processing.service';
+import { NotificationsService } from '../notifications/notifications.service';
 import { PermissionsService } from '../permissions/permissions.service';
 import { InstituteRequestsService, REVIEW_PERMISSION } from './institute-requests.service';
 import { PrismaService } from '../prisma/prisma.service';
@@ -123,6 +124,15 @@ const ITEM_INCLUDE = {
   attachments: { orderBy: { position: 'asc' as const } },
 };
 
+/** "24 oct.", en hora de Colombia. */
+function formatDay(d: Date): string {
+  return new Intl.DateTimeFormat('es-CO', {
+    day: 'numeric',
+    month: 'short',
+    timeZone: 'America/Bogota',
+  }).format(d);
+}
+
 function statusOf(item: Pick<InstituteItem, 'publishAt'>, now = new Date()): InstituteItemStatus {
   if (!item.publishAt) return InstituteItemStatus.DRAFT;
   return item.publishAt > now ? InstituteItemStatus.SCHEDULED : InstituteItemStatus.PUBLISHED;
@@ -140,6 +150,7 @@ export class InstituteService {
     private readonly video: VideoProcessingService,
     private readonly permissions: PermissionsService,
     private readonly requests: InstituteRequestsService,
+    private readonly notifications: NotificationsService,
   ) {}
 
   private async accessOf(me: AuthenticatedUser): Promise<Access> {
@@ -307,6 +318,9 @@ export class InstituteService {
     const { attachments, ...fields } = data;
     const attachmentRows = attachments.map((a, position) => ({ ...a, position }));
 
+    // Se avisa a los alumnos solo cuando algo pasa a estar publicado; editar
+    // lo que ya lo estaba no vuelve a avisar.
+    let wasPublished = false;
     const item = await this.prisma.$transaction(async (tx) => {
       if (!id) {
         return tx.instituteItem.create({
@@ -316,6 +330,7 @@ export class InstituteService {
       }
       const existing = await tx.instituteItem.findFirst({ where: { id, deletedAt: null } });
       if (!existing) throw new NotFoundException(`Item ${id} not found.`);
+      wasPublished = statusOf(existing) === InstituteItemStatus.PUBLISHED;
       await tx.instituteAttachment.deleteMany({ where: { itemId: id } });
       return tx.instituteItem.update({
         where: { id },
@@ -325,6 +340,9 @@ export class InstituteService {
     });
     // Los videos subidos se pasan a HLS por detrás para que arranquen rápido.
     this.video.enqueue(attachments.filter((a) => a.kind === 'FILE').map((a) => a.url));
+    if (!wasPublished && statusOf(item) === InstituteItemStatus.PUBLISHED) {
+      await this.notifyPublished(item, module.title, me.sub);
+    }
     return this.toItem(item, { turnedInCount: 0 });
   }
 
@@ -435,6 +453,9 @@ export class InstituteService {
           gradedAt: new Date(),
         }
       : { draftGrade: grade ?? null };
+    const before = await this.prisma.instituteSubmission.findUnique({
+      where: { itemId_studentId: { itemId, studentId } },
+    });
     const saved = await this.prisma.instituteSubmission.upsert({
       where: { itemId_studentId: { itemId, studentId } },
       create: {
@@ -444,6 +465,10 @@ export class InstituteService {
       },
       update: data,
     });
+    // Solo si la nota que ve el alumno cambió (no al guardar un borrador).
+    if (returnToStudent && saved.grade != null && saved.grade !== before?.grade) {
+      await this.notifications.notify(this.gradeNotice(item, studentId, saved.grade, me.sub));
+    }
     return {
       student: toUserModel(student.user),
       state: saved.state,
@@ -518,6 +543,44 @@ export class InstituteService {
       data: { leftAt: new Date() },
     });
     return true;
+  }
+
+  /** Avisa a los alumnos de lo que se acaba de publicar. */
+  private async notifyPublished(item: InstituteItem, moduleTitle: string, actorId: string) {
+    const students = await this.prisma.instituteEnrollment.findMany({
+      where: { role: 'STUDENT', leftAt: null },
+      select: { userId: true },
+    });
+    const what = { MATERIAL: 'Material nuevo', ASSIGNMENT: 'Tarea nueva', EXAM: 'Examen nuevo' }[
+      item.kind
+    ];
+    await this.notifications.notify({
+      type: 'instituto.contenido.nuevo',
+      to: students.map((s) => s.userId),
+      title: `${what}: ${item.title}`,
+      body: item.dueAt ? `${moduleTitle} · entrega hasta el ${formatDay(item.dueAt)}` : moduleTitle,
+      href: `/instituto?item=${item.id}`,
+      actorId,
+      data: { refId: item.id },
+    });
+  }
+
+  private gradeNotice(
+    item: Pick<InstituteItem, 'id' | 'title' | 'maxPoints'>,
+    studentId: string,
+    grade: number,
+    actorId: string,
+  ) {
+    const fmt = (n: number) => n.toLocaleString('es-CO', { maximumFractionDigits: 2 });
+    return {
+      type: 'instituto.nota.publicada' as const,
+      to: [studentId],
+      title: `Tienes nota en "${item.title}"`,
+      body: item.maxPoints != null ? `${fmt(grade)} / ${fmt(item.maxPoints)}` : fmt(grade),
+      href: `/instituto?item=${item.id}`,
+      actorId,
+      data: { refId: item.id },
+    };
   }
 
   /** Todas las notas: una fila por alumno, una columna por tarea o examen. */
@@ -774,6 +837,19 @@ export class InstituteService {
           });
         }),
       ]);
+      if (data.returnToStudent) {
+        const changed = writes.filter((w) => existingBy.get(w.studentId)?.grade !== w.grade);
+        await this.notifications.notifyEach(
+          changed.map((w) =>
+            this.gradeNotice(
+              { ...item, maxPoints: Math.round(maxPoints) },
+              w.studentId,
+              w.grade,
+              me.sub,
+            ),
+          ),
+        );
+      }
     }
 
     return {

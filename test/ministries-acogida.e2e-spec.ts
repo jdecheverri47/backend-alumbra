@@ -218,6 +218,14 @@ describe('Ministerios + Acogida (e2e)', () => {
     ]);
     const PENDING = '{ myPendingNewcomers }';
     expect((await gql('ministro', PENDING)).body.data.myPendingNewcomers).toBe(2);
+    // Un solo aviso por el reparto, con el conteo.
+    const NOTIFS = '{ notifications { edges { node { type title } } } }';
+    const notifs = async (who: string) =>
+      (await gql(who, NOTIFS)).body.data.notifications.edges.map(
+        (e: { node: { title: string } }) => e.node.title,
+      );
+    const before = await notifs('ministro');
+    expect(before[0]).toBe('Te asignaron 2 personas en Acogida');
 
     // Dejar una observación la saca de "por contactar".
     await gql(
@@ -233,8 +241,11 @@ describe('Ministerios + Acogida (e2e)', () => {
       assignedAt: assigned[0].assignedAt,
       pendingContact: false,
     });
+    expect(await notifs('ministro')).toHaveLength(before.length);
     // ...pero pasarla a otra persona sí: ahora está pendiente para ella.
     await gql('coord', BULK, { ids: [newcomerIds[1]], u: ids.coord });
+    // Asignarse a sí mismo no se avisa.
+    expect(await notifs('coord')).toEqual([]);
     expect((await gql('ministro', PENDING)).body.data.myPendingNewcomers).toBe(0);
     expect((await gql('coord', PENDING)).body.data.myPendingNewcomers).toBe(1);
 
