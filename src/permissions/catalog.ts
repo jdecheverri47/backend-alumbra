@@ -190,6 +190,12 @@ export const PERMISSION_MODULES: PermissionModule[] = [
         description: 'Dar o quitar el rol de profesor.',
         scopes: ['CHURCH'],
       },
+      {
+        key: 'instituto.inscripciones',
+        label: 'Aprobar inscripciones',
+        description: 'Ver, aprobar o rechazar las solicitudes para entrar al instituto.',
+        scopes: ['CHURCH'],
+      },
     ],
   },
   {
@@ -288,8 +294,8 @@ export const SYSTEM_ROLES: Array<{
   {
     key: 'director-instituto',
     name: 'Director del instituto',
-    description: 'Administra el Instituto Bíblico y nombra profesores.',
-    permissions: ['instituto.administrar', 'instituto.profesores'],
+    description: 'Administra el Instituto Bíblico, nombra profesores y aprueba inscripciones.',
+    permissions: ['instituto.administrar', 'instituto.profesores', 'instituto.inscripciones'],
   },
   {
     key: 'administrador-permisos',

@@ -6,7 +6,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { NotificationType } from './catalog';
 import { NotificationConnection, toNotificationEdge } from './dto/notification.model';
 
-export type NotificationResolution = 'APPROVED' | 'REJECTED';
+export type NotificationResolution = 'APPROVED' | 'REJECTED' | 'CANCELLED';
 
 export interface NotifyInput {
   type: NotificationType;

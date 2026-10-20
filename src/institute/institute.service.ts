@@ -16,6 +16,7 @@ import { z } from 'zod';
 import { AuthenticatedUser } from '../auth/types/authenticated-user';
 import { VideoProcessingService } from '../media/video-processing.service';
 import { PermissionsService } from '../permissions/permissions.service';
+import { InstituteRequestsService, REVIEW_PERMISSION } from './institute-requests.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { toUserModel } from '../users/dto/to-user-model';
 import { InstituteItemStatus } from './dto/institute-enums';
@@ -138,6 +139,7 @@ export class InstituteService {
     private readonly prisma: PrismaService,
     private readonly video: VideoProcessingService,
     private readonly permissions: PermissionsService,
+    private readonly requests: InstituteRequestsService,
   ) {}
 
   private async accessOf(me: AuthenticatedUser): Promise<Access> {
@@ -150,9 +152,18 @@ export class InstituteService {
   }
 
   async access(me: AuthenticatedUser): Promise<InstituteAccessModel> {
-    const a = await this.accessOf(me);
+    const [a, canReviewRequests] = await Promise.all([
+      this.accessOf(me),
+      this.permissions.can(me, REVIEW_PERMISSION),
+    ]);
     const canManage = a.manage;
-    return { role: a.role, canManage, canView: canManage || a.role === 'STUDENT' };
+    return {
+      role: a.role,
+      canManage,
+      canView: canManage || a.role === 'STUDENT',
+      canReviewRequests,
+      pendingRequests: canReviewRequests ? await this.requests.pendingCount() : 0,
+    };
   }
 
   private async assertView(me: AuthenticatedUser): Promise<Access> {
@@ -479,6 +490,7 @@ export class InstituteService {
         update: { role, leftAt: null },
       });
     }
+    if (role === 'STUDENT') await this.requests.closeOnManualEnroll(userIds, me.sub);
     const rows = await this.prisma.instituteEnrollment.findMany({
       where: { userId: { in: userIds } },
       include: { user: true },

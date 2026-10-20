@@ -40,7 +40,7 @@ export class NotificationModel {
 
   @Field(() => String, {
     nullable: true,
-    description: 'Si pedía una decisión y ya se tomó: APPROVED o REJECTED.',
+    description: 'Si pedía una decisión y ya se tomó: APPROVED, REJECTED o CANCELLED.',
   })
   resolution?: string | null;
 

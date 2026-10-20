@@ -18,6 +18,12 @@ export class InstituteAccessModel {
 
   @Field({ description: 'Puede entrar (inscrito o pastor).' })
   canView!: boolean;
+
+  @Field({ description: 'Tiene "Aprobar inscripciones".' })
+  canReviewRequests!: boolean;
+
+  @Field(() => Int, { description: 'Solicitudes por revisar (0 si no puede revisarlas).' })
+  pendingRequests!: number;
 }
 
 @ObjectType('InstituteAttachment')

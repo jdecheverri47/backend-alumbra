@@ -510,8 +510,14 @@ type InstituteAccess {
   """Profesor o pastor: administra el instituto."""
   canManage: Boolean!
 
+  """Tiene "Aprobar inscripciones"."""
+  canReviewRequests: Boolean!
+
   """Puede entrar (inscrito o pastor)."""
   canView: Boolean!
+
+  """Solicitudes por revisar (0 si no puede revisarlas)."""
+  pendingRequests: Int!
 
   """null si no está inscrito."""
   role: InstituteRole
@@ -697,6 +703,34 @@ type InstituteMySubmission {
   turnedInAt: DateTime
 }
 
+type InstituteRequest {
+  createdAt: DateTime!
+
+  """Grupos a los que pertenece."""
+  groups: [String!]!
+  id: ID!
+
+  """Ministerios en que sirve, para decidir."""
+  ministries: [String!]!
+
+  """Lo que escribió al pedir entrar."""
+  note: String
+
+  """Motivo del rechazo, si lo hubo."""
+  reviewNote: String
+  reviewedAt: DateTime
+  reviewedByName: String
+  status: InstituteRequestStatus!
+  user: User!
+}
+
+enum InstituteRequestStatus {
+  APPROVED
+  CANCELLED
+  PENDING
+  REJECTED
+}
+
 enum InstituteRole {
   STUDENT
   TEACHER
@@ -811,6 +845,7 @@ type Mutation {
 
   """Da acceso: habilita o crea el usuario (como asistente)."""
   approveAccessRequest(id: ID!): AccessRequest!
+  approveInstituteRequest(id: ID!): InstituteRequest!
 
   """Cierra el grupo una vez completado."""
   archiveGroup(id: ID!): Group!
@@ -830,6 +865,9 @@ type Mutation {
   """
   assignNewcomers(ids: [ID!]!, userId: ID): [Newcomer!]!
   cancelGroupSession(id: ID!, note: String): GroupSession!
+
+  """Cancela mi solicitud pendiente."""
+  cancelInstituteRequest: Boolean!
   certifyCourseCompletion(courseId: ID!, userId: ID!): CourseCompletion!
 
   """Registra el ingreso de un miembro a la clase (guarda la hora)."""
@@ -891,6 +929,7 @@ type Mutation {
   reactToPost(postId: ID!, type: ReactionType!): Post!
   registerNewcomer(input: NewcomerInput!): Newcomer!
   rejectAccessRequest(id: ID!): AccessRequest!
+  rejectInstituteRequest(id: ID!, reviewNote: String): InstituteRequest!
   removeFromInstitute(enrollmentId: ID!): Boolean!
   removePostReaction(postId: ID!): Post!
   removeSessionMaterial(id: ID!): Boolean!
@@ -899,6 +938,7 @@ type Mutation {
 
   """Reabre un grupo cerrado."""
   reopenGroup(id: ID!): Group!
+  requestInstituteEnrollment(note: String): InstituteRequest!
 
   """Reprogramar (reactiva si estaba cancelada)."""
   rescheduleGroupSession(id: ID!, note: String, startsAt: DateTime!): GroupSession!
@@ -954,6 +994,17 @@ type Mutation {
 
   """Vota en una encuesta. Un voto por persona."""
   votePoll(optionId: ID!): Poll!
+}
+
+type MyInstituteRequest {
+  """Puede pedir entrar ahora mismo."""
+  canRequest: Boolean!
+
+  """Si la rechazaron hace poco, desde cuándo puede volver a pedirla."""
+  canRequestAgainAt: DateTime
+
+  """La última que hizo."""
+  request: InstituteRequest
 }
 
 type MyPermissions {
@@ -1065,7 +1116,7 @@ type Notification {
   """
   refId: String
 
-  """Si pedía una decisión y ya se tomó: APPROVED o REJECTED."""
+  """Si pedía una decisión y ya se tomó: APPROVED, REJECTED o CANCELLED."""
   resolution: String
 
   """Quién tomó la decisión."""
@@ -1267,6 +1318,9 @@ type Query {
   instituteClasses: [InstituteClass!]!
   instituteGradebook: InstituteGradebook!
   instituteModules: [InstituteModule!]!
+
+  """Requiere "Aprobar inscripciones"."""
+  instituteRequests(status: InstituteRequestStatus! = PENDING): [InstituteRequest!]!
   instituteRoster: [InstituteEnrollment!]!
 
   """Cada alumno con su entrega de esta tarea. Profesores."""
@@ -1298,6 +1352,9 @@ type Query {
 
   """Qué puede hacer quien consulta."""
   myInstitute: InstituteAccess!
+
+  """Mi última solicitud y si puedo pedir."""
+  myInstituteRequest: MyInstituteRequest!
 
   """Procesos donde soy el entrevistador."""
   myInterviews: [MembershipJourney!]!

@@ -113,42 +113,44 @@ model User {
 
   ministryMemberships    MinistryMembership[]
   sessions               Session[]
-  ledGroups              Group[]                @relation("GroupLeader")
-  groupMemberships       GroupMembership[]      @relation("GroupMember")
-  addedGroupMembers      GroupMembership[]      @relation("GroupMemberAddedBy")
+  ledGroups              Group[]                      @relation("GroupLeader")
+  groupMemberships       GroupMembership[]            @relation("GroupMember")
+  addedGroupMembers      GroupMembership[]            @relation("GroupMemberAddedBy")
   createdEvents          Event[]
   posts                  Post[]
   postReactions          PostReaction[]
   postComments           PostComment[]
-  createdSessions        GroupSession[]         @relation("GroupSessionCreator")
-  uploadedMaterials      SessionMaterial[]      @relation("MaterialUploader")
-  submissions            AssignmentSubmission[] @relation("Submitter")
-  attendances            SessionAttendance[]    @relation("Attendee")
-  recordedAttendances    SessionAttendance[]    @relation("AttendanceRecorder")
-  courseCompletions      CourseCompletion[]     @relation("CompletionUser")
-  certifiedCompletions   CourseCompletion[]     @relation("CompletionCertifier")
-  courseEnrollments      CourseEnrollment[]     @relation("EnrollmentUser")
-  placedEnrollments      CourseEnrollment[]     @relation("EnrollmentPlacer")
-  membershipJourney      MembershipJourney?     @relation("JourneyUser")
-  interviewedJourneys    MembershipJourney[]    @relation("JourneyInterviewer")
-  assignedJourneys       MembershipJourney[]    @relation("JourneyAssignedLeader")
+  createdSessions        GroupSession[]               @relation("GroupSessionCreator")
+  uploadedMaterials      SessionMaterial[]            @relation("MaterialUploader")
+  submissions            AssignmentSubmission[]       @relation("Submitter")
+  attendances            SessionAttendance[]          @relation("Attendee")
+  recordedAttendances    SessionAttendance[]          @relation("AttendanceRecorder")
+  courseCompletions      CourseCompletion[]           @relation("CompletionUser")
+  certifiedCompletions   CourseCompletion[]           @relation("CompletionCertifier")
+  courseEnrollments      CourseEnrollment[]           @relation("EnrollmentUser")
+  placedEnrollments      CourseEnrollment[]           @relation("EnrollmentPlacer")
+  membershipJourney      MembershipJourney?           @relation("JourneyUser")
+  interviewedJourneys    MembershipJourney[]          @relation("JourneyInterviewer")
+  assignedJourneys       MembershipJourney[]          @relation("JourneyAssignedLeader")
   churchObservations     ChurchObservation[]
-  accessRequest          AccessRequest?         @relation("AccessRequestUser")
-  registeredNewcomers    Newcomer[]             @relation("NewcomerRegisteredBy")
-  assignedNewcomers      Newcomer[]             @relation("NewcomerAssignedTo")
-  newcomerProfile        Newcomer?              @relation("NewcomerUser")
+  accessRequest          AccessRequest?               @relation("AccessRequestUser")
+  registeredNewcomers    Newcomer[]                   @relation("NewcomerRegisteredBy")
+  assignedNewcomers      Newcomer[]                   @relation("NewcomerAssignedTo")
+  newcomerProfile        Newcomer?                    @relation("NewcomerUser")
   newcomerFollowUps      NewcomerFollowUp[]
   instituteEnrollments   InstituteEnrollment[]
-  instituteItems         InstituteItem[]        @relation("InstituteItemAuthor")
-  instituteSubmissions   InstituteSubmission[]  @relation("InstituteSubmissionStudent")
-  gradedSubmissions      InstituteSubmission[]  @relation("InstituteSubmissionGrader")
+  instituteItems         InstituteItem[]              @relation("InstituteItemAuthor")
+  instituteSubmissions   InstituteSubmission[]        @relation("InstituteSubmissionStudent")
+  gradedSubmissions      InstituteSubmission[]        @relation("InstituteSubmissionGrader")
   instituteClasses       InstituteClass[]
-  roleBindings           RoleBinding[]          @relation("RoleBindingUser")
-  grantedRoleBindings    RoleBinding[]          @relation("RoleBindingGrantedBy")
-  permissionAudits       PermissionAudit[]      @relation("PermissionAuditActor")
-  reviewedAccessRequests AccessRequest[]        @relation("AccessRequestReviewer")
-  notifications          Notification[]         @relation("NotificationUser")
-  causedNotifications    Notification[]         @relation("NotificationActor")
+  roleBindings           RoleBinding[]                @relation("RoleBindingUser")
+  grantedRoleBindings    RoleBinding[]                @relation("RoleBindingGrantedBy")
+  permissionAudits       PermissionAudit[]            @relation("PermissionAuditActor")
+  reviewedAccessRequests AccessRequest[]              @relation("AccessRequestReviewer")
+  notifications          Notification[]               @relation("NotificationUser")
+  instituteRequests      InstituteEnrollmentRequest[] @relation("InstituteRequestUser")
+  reviewedInstituteReqs  InstituteEnrollmentRequest[] @relation("InstituteRequestReviewer")
+  causedNotifications    Notification[]               @relation("NotificationActor")
 
   createdAt    DateTime       @default(now())
   updatedAt    DateTime       @updatedAt
@@ -814,6 +816,35 @@ model InstituteEnrollment {
 }
 
 // Una por alumno y tarea, cuando hay algo que guardar: la entregó o tiene nota.
+enum InstituteRequestStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  CANCELLED
+}
+
+// Alguien con cuenta pide entrar al Instituto y quien tenga "Aprobar
+// inscripciones" decide. Se guarda el historial: cada intento es una fila, y
+// solo puede haber una pendiente por persona (índice parcial en la migración).
+model InstituteEnrollmentRequest {
+  id           String                 @id @default(cuid())
+  userId       String
+  note         String?
+  status       InstituteRequestStatus @default(PENDING)
+  reviewedById String?
+  reviewedAt   DateTime?
+  // Motivo del rechazo: se le muestra a la persona.
+  reviewNote   String?
+  createdAt    DateTime               @default(now())
+  updatedAt    DateTime               @updatedAt
+
+  user       User  @relation("InstituteRequestUser", fields: [userId], references: [id])
+  reviewedBy User? @relation("InstituteRequestReviewer", fields: [reviewedById], references: [id])
+
+  @@index([status])
+  @@index([userId, createdAt])
+}
+
 model InstituteSubmission {
   id          String                    @id @default(cuid())
   itemId      String

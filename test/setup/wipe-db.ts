@@ -12,6 +12,7 @@ export async function wipeDb(prisma: PrismaClient): Promise<void> {
     'InstituteAttachment',
     'InstituteItem',
     'InstituteModule',
+    'InstituteEnrollmentRequest',
     'InstituteEnrollment',
     'PostReaction',
     'PostComment',
