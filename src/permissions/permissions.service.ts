@@ -174,6 +174,30 @@ export class PermissionsService implements OnModuleInit {
     );
   }
 
+  /**
+   * Quiénes tienen un permiso para toda la iglesia (p. ej. a quién avisar de una
+   * solicitud). Solo se revisa a quien podría tenerlo: pastores y personas con
+   * algún cargo o rol asignado.
+   */
+  async usersWith(permission: string): Promise<string[]> {
+    const candidates = await this.prisma.user.findMany({
+      where: {
+        deletedAt: null,
+        canSignIn: true,
+        OR: [
+          { isPastor: true },
+          { isLeader: true },
+          { ministryMemberships: { some: { leftAt: null } } },
+          { ledGroups: { some: { archivedAt: null } } },
+          { instituteEnrollments: { some: { leftAt: null, role: 'TEACHER' } } },
+          { roleBindings: { some: { revokedAt: null, role: { deletedAt: null } } } },
+        ],
+      },
+    });
+    const allowed = await Promise.all(candidates.map((u) => this.userCan(u, permission)));
+    return candidates.filter((_, i) => allowed[i]).map((u) => u.id);
+  }
+
   async assert(
     me: AuthenticatedUser,
     permission: string,

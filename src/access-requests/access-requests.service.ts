@@ -1,6 +1,8 @@
 import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { AccessRequest, AccessRequestStatus, Prisma } from '@prisma/client';
 import { GoogleIdentity } from '../auth/google-token.verifier';
+import { NotificationsService } from '../notifications/notifications.service';
+import { PermissionsService } from '../permissions/permissions.service';
 import { PrismaService } from '../prisma/prisma.service';
 
 export interface AccessRequestDetails {
@@ -10,7 +12,11 @@ export interface AccessRequestDetails {
 
 @Injectable()
 export class AccessRequestsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly permissions: PermissionsService,
+    private readonly notifications: NotificationsService,
+  ) {}
 
   /**
    * Registra (o refresca) la solicitud de alguien que entró con Google sin
@@ -41,12 +47,14 @@ export class AccessRequestsService {
     };
 
     if (!existing) {
-      return this.prisma.accessRequest.create({
+      const created = await this.prisma.accessRequest.create({
         data: { ...profile, userId: existingUserId },
       });
+      await this.notifyReviewers(created);
+      return created;
     }
 
-    return this.prisma.accessRequest.update({
+    const updated = await this.prisma.accessRequest.update({
       where: { id: existing.id },
       data: {
         ...profile,
@@ -56,6 +64,8 @@ export class AccessRequestsService {
           : {}),
       },
     });
+    if (existing.status === 'APPROVED') await this.notifyReviewers(updated);
+    return updated;
   }
 
   list(status: AccessRequestStatus): Promise<AccessRequest[]> {
@@ -71,7 +81,7 @@ export class AccessRequestsService {
    * uno nuevo como asistente.
    */
   async approve(id: string, reviewerId: string): Promise<AccessRequest> {
-    return this.prisma.$transaction(async (tx) => {
+    const approved = await this.prisma.$transaction(async (tx) => {
       const request = await this.findPendingOrThrow(tx, id);
 
       const existingUser = request.userId
@@ -122,15 +132,40 @@ export class AccessRequestsService {
         data: { status: 'APPROVED', userId, reviewedById: reviewerId, reviewedAt: new Date() },
       });
     });
+    await this.notifications.resolve('acceso.solicitud.nueva', id, 'APPROVED', reviewerId);
+    await this.notifications.notify({
+      type: 'acceso.solicitud.aprobada',
+      to: [approved.userId!],
+      title: '¡Bienvenido a Alumbra!',
+      body: 'Ya tienes acceso. Completa tu perfil para que la iglesia te conozca.',
+      href: `/perfil/${approved.userId}`,
+      actorId: reviewerId,
+    });
+    return approved;
   }
 
   async reject(id: string, reviewerId: string): Promise<AccessRequest> {
-    return this.prisma.$transaction(async (tx) => {
+    const rejected = await this.prisma.$transaction(async (tx) => {
       await this.findPendingOrThrow(tx, id);
       return tx.accessRequest.update({
         where: { id },
         data: { status: 'REJECTED', reviewedById: reviewerId, reviewedAt: new Date() },
       });
+    });
+    await this.notifications.resolve('acceso.solicitud.nueva', id, 'REJECTED', reviewerId);
+    return rejected;
+  }
+
+  /** Avisa a quienes pueden aprobar accesos. */
+  private async notifyReviewers(request: AccessRequest): Promise<void> {
+    const reviewers = await this.permissions.usersWith('accesos.aprobar');
+    await this.notifications.notify({
+      type: 'acceso.solicitud.nueva',
+      to: reviewers,
+      title: `${request.firstName} ${request.lastName} pidió acceso`,
+      body: request.note ?? request.email,
+      href: '/personas',
+      data: { refId: request.id },
     });
   }
 

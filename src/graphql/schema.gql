@@ -877,6 +877,10 @@ type Mutation {
   """
   importPeople(apply: Boolean! = false, rows: [ImportPersonInput!]!): ImportPeopleResult!
 
+  """Marca todas como leídas; devuelve cuántas."""
+  markAllNotificationsRead: Int!
+  markNotificationRead(id: ID!): Boolean!
+
   """Abre el filtro de iglesia y publica el anuncio."""
   openChurchFilter(id: ID!): MembershipJourney!
 
@@ -1044,6 +1048,48 @@ enum NewcomerStatus {
   INTEGRADO
   NO_CONTINUA
   NUEVO
+}
+
+type Notification {
+  actor: NotificationActor
+  body: String
+  createdAt: DateTime!
+
+  """A dónde lleva al abrirla."""
+  href: String
+  id: ID!
+  readAt: DateTime
+
+  """
+  Id de lo que trata el aviso (p. ej. la solicitud), para actuar desde la campana.
+  """
+  refId: String
+
+  """Si pedía una decisión y ya se tomó: APPROVED o REJECTED."""
+  resolution: String
+
+  """Quién tomó la decisión."""
+  resolvedByName: String
+  title: String!
+
+  """Clave del catálogo, p. ej. "acceso.solicitud.nueva"."""
+  type: String!
+}
+
+type NotificationActor {
+  fullName: String!
+  id: ID!
+  photoUrl: String
+}
+
+type NotificationConnection {
+  edges: [NotificationEdge!]!
+  pageInfo: PageInfo!
+}
+
+type NotificationEdge {
+  cursor: String!
+  node: Notification!
 }
 
 type PageInfo {
@@ -1272,6 +1318,9 @@ type Query {
   """Personas nuevas, lo más reciente primero."""
   newcomers(filter: NewcomerFilterInput): [Newcomer!]!
 
+  """Mis avisos, lo más reciente primero."""
+  notifications(page: PaginationInput): NotificationConnection!
+
   """Inscritos pendientes de cohorte de un curso."""
   pendingCourseEnrollments(courseId: ID!): [CourseEnrollment!]!
   permissionAudit(limit: Int! = 50): [PermissionAuditEntry!]!
@@ -1305,6 +1354,7 @@ type Query {
 
   """Eventos anunciados sin fecha definida, visibles para mí."""
   undatedEvents: [Event!]!
+  unreadNotificationCount: Int!
   user(id: ID!): User
 
   """Lo que puede hacer una persona y de dónde le viene."""

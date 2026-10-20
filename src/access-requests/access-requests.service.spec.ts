@@ -1,6 +1,8 @@
 import { Test } from '@nestjs/testing';
 import { requireLocalDb } from '../../test/setup/require-local-db';
 import { wipeDb } from '../../test/setup/wipe-db';
+import { NotificationsService } from '../notifications/notifications.service';
+import { PermissionsService } from '../permissions/permissions.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { AccessRequestsService } from './access-requests.service';
 
@@ -25,7 +27,7 @@ describe('AccessRequestsService', () => {
   beforeAll(async () => {
     requireLocalDb();
     const moduleRef = await Test.createTestingModule({
-      providers: [AccessRequestsService, PrismaService],
+      providers: [AccessRequestsService, PrismaService, PermissionsService, NotificationsService],
     }).compile();
     service = moduleRef.get(AccessRequestsService);
     prisma = moduleRef.get(PrismaService);
@@ -137,6 +139,82 @@ describe('AccessRequestsService', () => {
 
       expect(rejected).toMatchObject({ status: 'REJECTED', reviewedById: reviewerId });
       expect(await prisma.user.count()).toBe(1);
+    });
+  });
+
+  describe('notifications', () => {
+    it('avisa a quien aprueba accesos cuando llega una solicitud nueva', async () => {
+      await prisma.user.update({ where: { id: reviewerId }, data: { canSignIn: true } });
+
+      await service.recordFromGoogle(
+        {
+          email: 'nuevo@alumbra.test',
+          googleId: 'g-nuevo',
+          firstName: 'Nuevo',
+          lastName: 'Visitante',
+          photoUrl: null,
+        },
+        null,
+        { note: 'Vengo los domingos' },
+      );
+
+      const [n] = await prisma.notification.findMany({ where: { userId: reviewerId } });
+      expect(n).toMatchObject({
+        type: 'acceso.solicitud.nueva',
+        title: 'Nuevo Visitante pidió acceso',
+        body: 'Vengo los domingos',
+        href: '/personas',
+      });
+    });
+
+    it('al resolverla, el aviso de cada revisor dice quién y cómo', async () => {
+      const otro = await prisma.user.create({
+        data: {
+          email: 'otro@alumbra.test',
+          firstName: 'Otro',
+          lastName: 'Pastor',
+          isPastor: true,
+          canSignIn: true,
+        },
+      });
+      await prisma.user.update({ where: { id: reviewerId }, data: { canSignIn: true } });
+      await service.recordFromGoogle(
+        {
+          email: 'nuevo@alumbra.test',
+          googleId: 'g-nuevo',
+          firstName: 'Nuevo',
+          lastName: 'Visitante',
+          photoUrl: null,
+        },
+        null,
+        {},
+      );
+      const request = await prisma.accessRequest.findFirstOrThrow();
+
+      await service.reject(request.id, reviewerId);
+
+      const rows = await prisma.notification.findMany({
+        where: { type: 'acceso.solicitud.nueva' },
+      });
+      expect(rows).toHaveLength(2);
+      for (const n of rows) {
+        expect(n.data).toMatchObject({
+          refId: request.id,
+          resolution: 'REJECTED',
+          resolvedByName: 'Pa Stor',
+        });
+      }
+      expect(rows.find((n) => n.userId === reviewerId)!.readAt).not.toBeNull();
+      expect(rows.find((n) => n.userId === otro.id)!.readAt).toBeNull();
+    });
+
+    it('le da la bienvenida a quien aprueban', async () => {
+      const request = await createRequest();
+
+      const approved = await service.approve(request.id, reviewerId);
+
+      const [n] = await prisma.notification.findMany({ where: { userId: approved.userId! } });
+      expect(n).toMatchObject({ type: 'acceso.solicitud.aprobada', actorId: reviewerId });
     });
   });
 
