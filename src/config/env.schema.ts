@@ -22,6 +22,11 @@ const envSchema = z.object({
   VIDEO_JOB: z.string().optional(),
   // "off" desactiva el procesamiento de videos (tests).
   VIDEO_PROCESSING: z.enum(['on', 'off']).optional(),
+  // Token compartido con Cloud Scheduler para POST /internal/notifications/tick
+  // (los recordatorios). Sin él, ese endpoint responde 503.
+  CRON_TOKEN: z
+    .union([z.literal(''), z.string().min(32, 'CRON_TOKEN must be at least 32 characters')])
+    .optional(),
   // Uno o varios orígenes separados por comas: el sitio se sirve en el dominio
   // apex y en www, y son orígenes distintos para el navegador.
   CORS_ORIGIN: z

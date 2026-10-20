@@ -196,6 +196,47 @@ gcloud iam service-accounts add-iam-policy-binding "$SA" --project "$PROJECT_ID"
   --member "serviceAccount:${SA}" --role roles/iam.serviceAccountUser
 ```
 
+### Recordatorios (Cloud Scheduler)
+
+Los avisos que dependen de la hora salen de `POST /internal/notifications/tick`:
+lo programado en el Instituto cuando se publica, y las fechas límite, clases y
+eventos de las próximas 24 horas. Cada aviso sale una sola vez, así que llamarlo
+seguido no duplica nada. Se protege con un token en el encabezado
+`X-Cron-Token`; sin el secreto, el endpoint responde 503.
+
+Una sola vez:
+
+```bash
+# 1. El token (el env schema exige 32+ caracteres). deploy.sh lo monta como
+#    CRON_TOKEN si el secreto existe.
+openssl rand -hex 32 | tr -d '\n' \
+  | gcloud secrets create alumbra-cron-token --data-file=- --project "$PROJECT_ID"
+gcloud secrets add-iam-policy-binding alumbra-cron-token \
+  --member "serviceAccount:${SA}" --role roles/secretmanager.secretAccessor \
+  --project "$PROJECT_ID"
+
+# 2. Desplegar (./scripts/deploy.sh) para que el servicio lo tome.
+
+# 3. El job: cada 15 minutos.
+gcloud services enable cloudscheduler.googleapis.com --project "$PROJECT_ID"
+URL="$(gcloud run services describe backend-alumbra --region "$REGION" \
+  --project "$PROJECT_ID" --format 'value(status.url)')"
+gcloud scheduler jobs create http alumbra-recordatorios \
+  --project "$PROJECT_ID" --location "$REGION" \
+  --schedule "*/15 * * * *" --time-zone "America/Bogota" \
+  --http-method POST --uri "${URL}/internal/notifications/tick" \
+  --headers "X-Cron-Token=$(gcloud secrets versions access latest \
+    --secret alumbra-cron-token --project "$PROJECT_ID")" \
+  --attempt-deadline 60s
+```
+
+Para probarlo sin esperar: `gcloud scheduler jobs run alumbra-recordatorios
+--location "$REGION" --project "$PROJECT_ID"`. La respuesta (y el log del
+servicio, "Recordatorios: …") dice cuántos avisos mandó de cada tipo.
+
+Si se rota el token, hay que actualizar el job (`gcloud scheduler jobs update
+http … --update-headers`) y volver a desplegar.
+
 ---
 
 ## 2. Desplegar

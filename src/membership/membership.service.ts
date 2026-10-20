@@ -6,6 +6,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { Group, JourneyStage, MembershipJourney, Prisma, User } from '@prisma/client';
+import { formatWhen } from '../common/format-date';
 import { NotificationsService } from '../notifications/notifications.service';
 import { PermissionsService } from '../permissions/permissions.service';
 import { PrismaService } from '../prisma/prisma.service';
@@ -29,18 +30,6 @@ const JOURNEY_INCLUDE = {
 };
 
 type JourneyRow = Prisma.MembershipJourneyGetPayload<{ include: typeof JOURNEY_INCLUDE }>;
-
-/** "lunes 3 de noviembre, 7:00 p. m.", en hora de Colombia. */
-function formatWhen(d: Date): string {
-  return new Intl.DateTimeFormat('es-CO', {
-    weekday: 'long',
-    day: 'numeric',
-    month: 'long',
-    hour: 'numeric',
-    minute: '2-digit',
-    timeZone: 'America/Bogota',
-  }).format(d);
-}
 
 const fullName = (u: Pick<User, 'firstName' | 'lastName'>) => `${u.firstName} ${u.lastName}`;
 

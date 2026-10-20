@@ -86,6 +86,31 @@ export class NotificationsService {
   }
 
   /**
+   * Como `notifyEach`, pero sin repetir: a quien ya recibió un aviso de ese
+   * tipo sobre lo mismo (`data.refId`) no se le vuelve a mandar. Es lo que deja
+   * correr los recordatorios cada pocos minutos sin duplicar nada.
+   */
+  async notifyEachOnce(inputs: Array<NotifyInput & { data: { refId: string } }>): Promise<number> {
+    if (inputs.length === 0) return 0;
+    const sent = new Set<string>();
+    for (const type of new Set(inputs.map((i) => i.type))) {
+      const refIds = inputs.filter((i) => i.type === type).map((i) => i.data.refId);
+      const rows = await this.prisma.$queryRaw<Array<{ userId: string; refId: string }>>`
+        SELECT "userId", data->>'refId' AS "refId" FROM "Notification"
+        WHERE type = ${type} AND data->>'refId' = ANY(${refIds})`;
+      for (const r of rows) sent.add(`${type}:${r.userId}:${r.refId}`);
+    }
+    const pending = inputs
+      .map((i) => ({
+        ...i,
+        to: i.to.filter((userId) => !sent.has(`${i.type}:${userId}:${i.data.refId}`)),
+      }))
+      .filter((i) => i.to.length > 0);
+    await this.notifyEach(pending);
+    return pending.reduce((n, i) => n + i.to.length, 0);
+  }
+
+  /**
    * Quienes ven algo publicado para toda la iglesia, o solo para miembros
    * (y pastores) si `membersOnly`.
    */

@@ -27,6 +27,10 @@ SERVICE_ACCOUNT="${SERVICE_ACCOUNT:-backend-alumbra@${PROJECT_ID}.iam.gserviceac
 # Secretos en Secret Manager (nombre:versión).
 SECRET_DATABASE_URL="${SECRET_DATABASE_URL:-alumbra-database-url:latest}"
 SECRET_JWT="${SECRET_JWT:-alumbra-jwt-secret:latest}"
+# Token de los recordatorios (Cloud Scheduler → /internal/notifications/tick).
+# Opcional: si el secreto aún no existe, se despliega sin él y el endpoint
+# responde 503. Ver "Recordatorios" en docs/deploy-gcp.md.
+SECRET_CRON="${SECRET_CRON:-alumbra-cron-token}"
 
 # Variables de entorno de la app. CORS_ORIGIN son los orígenes exactos del
 # frontend (con esquema, sin barra final) o el login por cookie no funciona.
@@ -76,6 +80,13 @@ echo
 # --no-invoker-iam-check en vez de --allow-unauthenticated: la organización de
 # iglesiaalumbra.org tiene Domain Restricted Sharing, que prohíbe dar el rol de
 # invoker a allUsers. Esto deja el servicio público sin pasar por IAM.
+SECRETS="DATABASE_URL=${SECRET_DATABASE_URL},JWT_SECRET=${SECRET_JWT}"
+if gcloud secrets describe "${SECRET_CRON}" --project "${PROJECT_ID}" >/dev/null 2>&1; then
+  SECRETS="${SECRETS},CRON_TOKEN=${SECRET_CRON}:latest"
+else
+  echo "    (sin ${SECRET_CRON}: los recordatorios quedan apagados)"
+fi
+
 gcloud run deploy "${SERVICE}" \
   --project "${PROJECT_ID}" \
   --region "${REGION}" \
@@ -83,7 +94,7 @@ gcloud run deploy "${SERVICE}" \
   --platform managed \
   --service-account "${SERVICE_ACCOUNT}" \
   --add-cloudsql-instances "${SQL_CONNECTION_NAME}" \
-  --set-secrets "DATABASE_URL=${SECRET_DATABASE_URL},JWT_SECRET=${SECRET_JWT}" \
+  --set-secrets "${SECRETS}" \
   --set-env-vars "^##^NODE_ENV=production##CORS_ORIGIN=${CORS_ORIGIN}##COOKIE_DOMAIN=${COOKIE_DOMAIN}##JWT_ACCESS_TTL=${JWT_ACCESS_TTL}##REFRESH_TTL_DAYS=${REFRESH_TTL_DAYS}##GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID}##GCS_BUCKET=${GCS_BUCKET}##VIDEO_JOB=${VIDEO_JOB}" \
   --no-invoker-iam-check \
   --memory 512Mi \

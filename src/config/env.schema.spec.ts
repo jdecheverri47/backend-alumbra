@@ -65,4 +65,9 @@ describe('ttlToSeconds', () => {
   it('throws on malformed input', () => {
     expect(() => ttlToSeconds('15')).toThrow(/Invalid TTL/);
   });
+
+  it('CRON_TOKEN: vacío es "sin configurar"; si viene, 32+ caracteres', () => {
+    expect(validateEnv({ ...BASE, CRON_TOKEN: '' }).CRON_TOKEN).toBe('');
+    expect(() => validateEnv({ ...BASE, CRON_TOKEN: 'corto' })).toThrow(/CRON_TOKEN/);
+  });
 });

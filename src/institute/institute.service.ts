@@ -17,6 +17,7 @@ import { AuthenticatedUser } from '../auth/types/authenticated-user';
 import { VideoProcessingService } from '../media/video-processing.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { PermissionsService } from '../permissions/permissions.service';
+import { contentNotice } from './institute-notices';
 import { InstituteRequestsService, REVIEW_PERMISSION } from './institute-requests.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { toUserModel } from '../users/dto/to-user-model';
@@ -123,15 +124,6 @@ const ITEM_INCLUDE = {
   author: true,
   attachments: { orderBy: { position: 'asc' as const } },
 };
-
-/** "24 oct.", en hora de Colombia. */
-function formatDay(d: Date): string {
-  return new Intl.DateTimeFormat('es-CO', {
-    day: 'numeric',
-    month: 'short',
-    timeZone: 'America/Bogota',
-  }).format(d);
-}
 
 function statusOf(item: Pick<InstituteItem, 'publishAt'>, now = new Date()): InstituteItemStatus {
   if (!item.publishAt) return InstituteItemStatus.DRAFT;
@@ -551,18 +543,14 @@ export class InstituteService {
       where: { role: 'STUDENT', leftAt: null },
       select: { userId: true },
     });
-    const what = { MATERIAL: 'Material nuevo', ASSIGNMENT: 'Tarea nueva', EXAM: 'Examen nuevo' }[
-      item.kind
-    ];
-    await this.notifications.notify({
-      type: 'instituto.contenido.nuevo',
-      to: students.map((s) => s.userId),
-      title: `${what}: ${item.title}`,
-      body: item.dueAt ? `${moduleTitle} · entrega hasta el ${formatDay(item.dueAt)}` : moduleTitle,
-      href: `/instituto?item=${item.id}`,
-      actorId,
-      data: { refId: item.id },
-    });
+    await this.notifications.notify(
+      contentNotice(
+        item,
+        moduleTitle,
+        students.map((s) => s.userId),
+        actorId,
+      ),
+    );
   }
 
   private gradeNotice(
