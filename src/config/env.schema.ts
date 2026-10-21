@@ -24,12 +24,15 @@ const envSchema = z.object({
   VIDEO_PROCESSING: z.enum(['on', 'off']).optional(),
   // Token compartido con Cloud Scheduler para POST /internal/notifications/tick
   // (los recordatorios). Sin él, ese endpoint responde 503.
+  // Los secretos se recortan: al pegarlos en Secret Manager suele colarse un salto de línea.
   CRON_TOKEN: z
-    .union([z.literal(''), z.string().min(32, 'CRON_TOKEN must be at least 32 characters')])
+    .string()
+    .trim()
+    .pipe(z.union([z.literal(''), z.string().min(32, 'CRON_TOKEN must be at least 32 characters')]))
     .optional(),
   // Correo de los avisos (Resend). Sin la API key, los correos se escriben en el
   // log en vez de mandarse (desarrollo y tests).
-  RESEND_API_KEY: z.string().optional(),
+  RESEND_API_KEY: z.string().trim().optional(),
   EMAIL_FROM: z.string().default('Alumbra <notificaciones@iglesiaalumbra.org>'),
   EMAIL_REPLY_TO: z.string().default('info@iglesiaalumbra.org'),
   // Dirección del frontend para los enlaces de los correos. Sin ella, el primer

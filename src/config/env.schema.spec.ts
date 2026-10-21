@@ -14,6 +14,15 @@ describe('validateEnv', () => {
     expect(result.DATABASE_URL).toBe('postgresql://u:p@localhost:5432/alumbra');
   });
 
+  it('trims secrets pasted with a trailing newline', () => {
+    const token = 'x'.repeat(32);
+    const result = validateEnv({ ...BASE, RESEND_API_KEY: 're_abc\n', CRON_TOKEN: `${token}\n` });
+    expect(result.RESEND_API_KEY).toBe('re_abc');
+    expect(result.CRON_TOKEN).toBe(token);
+    expect(validateEnv({ ...BASE, CRON_TOKEN: '' }).CRON_TOKEN).toBe('');
+    expect(() => validateEnv({ ...BASE, CRON_TOKEN: 'corto' })).toThrow();
+  });
+
   it('defaults PORT to 3000 when missing', () => {
     const result = validateEnv(BASE);
     expect(result.PORT).toBe(3000);
