@@ -171,7 +171,7 @@ Si no hay fila de preferencia, rige el valor por defecto del catálogo.
 
 Las reacciones a un post **no** generan aviso: harían demasiado ruido. `assignMany` y `importFormGrades` mandan **un solo** aviso por destinatario, con el conteo ("Te asignaron 5 registros").
 
-**Rechazo del acceso a la app:** no se avisa. La persona no tiene cuenta para ver la campana, y un correo de rechazo a alguien que acaba de llegar a la iglesia se siente frío. Queda abierto a cambiarlo si lo prefieres.
+**Rechazo del acceso a la app:** no se avisa. La persona no tiene cuenta para ver la campana, y un correo de rechazo a alguien que acaba de llegar a la iglesia se siente frío. Confirmado por Jose el 2026-10-20.
 
 ### Recordatorios (los de "24 h antes")
 
@@ -207,8 +207,9 @@ Un endpoint interno `POST /internal/notifications/tick`, protegido con un token,
 4. Resend: plantillas, preferencias y pie para darse de baja.
 5. Recordatorios con Cloud Scheduler.
 
-## Pendiente de Jose
+## Estado (2026-10-20)
 
-- Crear la cuenta de Resend, verificar `iglesiaalumbra.org` en el DNS y pasar la API key.
-- Confirmar el remitente `notificaciones@iglesiaalumbra.org`.
-- Confirmar que el rechazo del acceso a la app no se avisa.
+- En producción: migraciones, backend y frontend desplegados.
+- Resend: dominio `iglesiaalumbra.org` verificado, key en `alumbra-resend-api-key`. Los correos salen desde `notificaciones@iglesiaalumbra.org` con respuestas a `info@iglesiaalumbra.org`.
+- Recordatorios: secreto `alumbra-cron-token` y job `alumbra-recordatorios` cada 15 minutos.
+- El rechazo del acceso a la app no se avisa (confirmado).
